@@ -1,10 +1,10 @@
 amcl:
   ros__parameters:
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
-    alpha5: 0.2
+    alpha1: 0.4
+    alpha2: 0.4
+    alpha3: 0.4
+    alpha4: 0.4
+    alpha5: 0.4
     base_frame_id: "base_footprint"
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
@@ -17,8 +17,8 @@ amcl:
     laser_min_range: -1.0
     laser_model_type: "likelihood_field"
     max_beams: 60
-    max_particles: 2000
-    min_particles: 500
+    max_particles: 2500
+    min_particles: 1000
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
@@ -30,8 +30,8 @@ amcl:
     sigma_hit: 0.2
     tf_broadcast: true
     transform_tolerance: 1.0
-    update_min_a: 0.1
-    update_min_d: 0.15
+    update_min_a: 0.05
+    update_min_d: 0.05
     z_hit: 0.5
     z_max: 0.05
     z_rand: 0.5
@@ -85,12 +85,12 @@ controller_server:
       max_angular_accel: 3.2                 # [rad/s^2] 최대 각가속도 (회전할 때 얼마나 빨리 가속할지)
 
       # 경로 추종 (Lookahead, 시선 두기)
-      lookahead_dist: 0.6                    # [m] 기본 전방 주시 거리
+      lookahead_dist: 0.15                    # [m] 기본 전방 주시 거리
       use_velocity_scaled_lookahead_dist: true # 현재 속도에 비례해 주시 거리를 늘릴지 여부
-      lookahead_time: 1.5                    # [s] 속도 비례 주시 시간 (속도 * 시간 = 주시 거리)
-      min_lookahead_dist: 0.3                # [m] 최소 주시 거리
-      max_lookahead_dist: 0.9                # [m] 최대 주시 거리
-      curvature_lookahead_dist: 0.6          # [m] 경로의 곡률(커브)을 계산하기 위해 내다보는 거리
+      lookahead_time: 1.0                    # [s] 속도 비례 주시 시간 (속도 * 시간 = 주시 거리)
+      min_lookahead_dist: 0.1                # [m] 최소 주시 거리
+      max_lookahead_dist: 0.2                # [m] 최대 주시 거리
+      curvature_lookahead_dist: 0.15          # [m] 경로의 곡률(커브)을 계산하기 위해 내다보는 거리
       use_fixed_curvature_lookahead: false   # 곡률 계산용 거리를 고정값으로 쓸지 여부 (false면 주시거리와 연동)
 
       # 제자리 회전 (고개 먼저 돌리기)
@@ -105,9 +105,9 @@ controller_server:
 
       # 장애물 접근 시 감속 (Cost Regulated)
       use_cost_regulated_linear_velocity_scaling: true # 장애물 근처(비용맵 높은 곳)에서 속도 줄이기
-      cost_scaling_dist: 0.6                 # [m] 장애물 중심으로부터 이 거리 안쪽일 때 감속 고려
-      cost_scaling_gain: 1.5                 # 장애물 감속 민감도 (클수록 더 팍 줄임)
-      inflation_cost_scaling_factor: 3.0     # 컨트롤러 내부에서 비용을 계산할 때 쓰는 인플레이션 가중치
+      cost_scaling_dist: 0.06                 # [m] 장애물 중심으로부터 이 거리 안쪽일 때 감속 고려
+      cost_scaling_gain: 1.0                 # 장애물 감속 민감도 (클수록 더 팍 줄임)
+      inflation_cost_scaling_factor: 4.0     # 컨트롤러 내부에서 비용을 계산할 때 쓰는 인플레이션 가중치
 
       # 목적지 접근 시 감속
       approach_velocity_scaling_dist: 0.6    # [m] 목표 지점까지 이 거리만큼 남았을 때부터 서서히 감속
@@ -128,7 +128,7 @@ controller_server:
     # 2. 컨트롤러 서버 공통 설정
     # ==========================================================
     controller_plugins: ["FollowPath"]           # 메인 주행 플러그인 (위에서 설정한 이름)
-    controller_frequency: 20.0                   # [Hz] 제어 명령(cmd_vel)을 1초에 20번 내보냄
+    controller_frequency: 25.0                   # [Hz] 제어 명령(cmd_vel)을 1초에 20번 내보냄
     action_server_result_timeout: 10.0           # [s] 액션 서버 결과 대기 최대 시간
     autostart_node: false                        # 노드 켤 때 자동 활성화 여부
     bond_heartbeat_period: 0.1                   # [s] 시스템 상태 체크(하트비트) 주기
@@ -155,8 +155,8 @@ controller_server:
     general_goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
       stateful: true
-      xy_goal_tolerance: 0.25                    # [m] 목표 지점 반경 0.25m 안에 들어오면 도착 인정
-      yaw_goal_tolerance: 0.25                   # [rad] 목표 각도 오차 약 14도 이내면 올바르게 본 것으로 인정
+      xy_goal_tolerance: 0.05                    # [m] 목표 지점 반경 0.05m 안에 들어오면 도착 인정
+      yaw_goal_tolerance: 0.1                    # [rad] 목표 각도 오차 약 14도 이내면 올바르게 본 것으로 인정
 
     # ==========================================================
     # 4. 주행 진척도 검사 (Progress Checker)
@@ -167,27 +167,28 @@ controller_server:
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       movement_time_allowance: 10.0              # [s] 이 시간 동안 아래 거리만큼 못 움직이면 끼인 것으로 판단
-      required_movement_radius: 0.5              # [m] 위 시간 동안 최소 0.5m 반경은 벗어나야 함 (못 벗어나면 Recovery 실행)
+      required_movement_radius: 0.05              # [m] 위 시간 동안 최소 0.5m 반경은 벗어나야 함 (못 벗어나면 Recovery 실행)
 
 
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 5.0
+      footprint_padding: 0.02
+      update_frequency: 10.0
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_footprint
       rolling_window: true
-      width: 3
-      height: 3
+      width: 2
+      height: 2
       resolution: 0.05
       #robot_radius: 0.22
       footprint: '[[0.06, 0.06], [0.06, -0.06], [-0.06, -0.06], [-0.06, 0.06]]'
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.15
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.06
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -216,7 +217,7 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      footprint_padding: 0.03
+      footprint_padding: 0.02
       update_frequency: 1.0
       publish_frequency: 1.0
       global_frame: map
@@ -245,8 +246,8 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.15
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.06
       always_send_full_costmap: True
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.
@@ -270,7 +271,7 @@ planner_server:
     costmap_update_timeout: 1.0
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.5
+      tolerance: 0.05
       use_astar: false
       allow_unknown: true
 
@@ -327,10 +328,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.25, 0.0, 1.5]
-    min_velocity: [-0.25, 0.0, -1.5]
-    max_accel: [2.5, 0.0, 3.2]
-    max_decel: [-2.5, 0.0, -3.2]
+    max_velocity: [0.12, 0.0, 0.6]
+    min_velocity: [-0.05, 0.0, -0.6]
+    max_accel: [0.5, 0.0, 0.6]
+    max_decel: [-0.5, 0.0, -0.6]
     odom_topic: "odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
