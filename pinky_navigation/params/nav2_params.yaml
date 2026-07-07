@@ -173,6 +173,7 @@ controller_server:
 local_costmap:
   local_costmap:
     ros__parameters:
+      footprint_padding: 0.02
       update_frequency: 5.0
       publish_frequency: 2.0
       global_frame: odom
@@ -186,8 +187,8 @@ local_costmap:
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.15
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.06
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -216,7 +217,7 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      footprint_padding: 0.03
+      footprint_padding: 0.02
       update_frequency: 1.0
       publish_frequency: 1.0
       global_frame: map
@@ -245,8 +246,8 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.15
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.06
       always_send_full_costmap: True
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.
