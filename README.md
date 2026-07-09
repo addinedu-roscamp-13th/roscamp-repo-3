@@ -1,6 +1,7 @@
 # roscamp-repo-3
 ROS2와 AI를 활용한 자율주행 로봇개발자 부트캠프 3팀 저장소. WaSaB (와사비) 
 
+
 ## System Architecture
 
 <table>
@@ -18,7 +19,7 @@ ROS2와 AI를 활용한 자율주행 로봇개발자 부트캠프 3팀 저장소
 
 ## GitHub 컨벤션
 
-### 🌴 브랜치
+### 브랜치
 - **`main`**
   - 배포용 브랜치
 - **`develop`**
