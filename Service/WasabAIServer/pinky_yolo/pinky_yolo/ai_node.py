@@ -18,7 +18,8 @@ except ImportError:
     from face_recognizer import FaceRecognizer
 
 # ── 경로 설정 ─────────────────────────────────────────────────────────────────
-FACE_DB_DIR = os.path.expanduser("~/dev_ws/wasab/face_db")
+_PKG_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FACE_DB_DIR = os.path.join(_PKG_DIR, "face_db")
 YOLO_MODEL  = "yolov8n.pt"
 
 # ── 얼굴 인식 (InsightFace SCRFD + ArcFace) ───────────────────────────────────
