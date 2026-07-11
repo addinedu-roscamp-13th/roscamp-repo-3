@@ -42,7 +42,7 @@ ROS2와 AI를 활용한 자율주행 로봇개발자 부트캠프 3팀 저장소
 - **`Commit`**
   - [IssueNumber] Commit Message
     - ex1) [#203] 추종 알고리즘 구현
-    - ex1) [#207] 주행 파라미터 통합
+    - ex2) [#207] 주행 파라미터 통합
 - **`PR`**
   - [Label/IssueNumber] Issue Title
     - ex1) [Feat/#037] 추종 기능 구현
