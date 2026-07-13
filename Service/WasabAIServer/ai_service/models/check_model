@@ -1,0 +1,9 @@
+from ultralytics import YOLO
+
+model = YOLO("/home/ane/dev_ws/Jetcobot-manipulation/Jetcobot-manipulation_server/models/best.pt")
+
+print("클래스 목록:")
+for idx, name in model.names.items():
+    print(f"{idx}: {name}")
+
+print("클래스 개수:", len(model.names))

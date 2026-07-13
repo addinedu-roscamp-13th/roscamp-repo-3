@@ -1,0 +1,2 @@
+Copy camera_intrinsic_charuco.npz and auto_handeye_result_20260619_162107.json here,
+or set INTRINSIC_FILE/HANDEYE_RESULT_JSON to their actual server paths.
