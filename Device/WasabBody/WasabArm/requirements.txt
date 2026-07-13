@@ -1,0 +1,4 @@
+numpy==2.5.0
+opencv_contrib_python==4.13.0.92
+pymycobot==4.0.5
+Requests==2.34.2

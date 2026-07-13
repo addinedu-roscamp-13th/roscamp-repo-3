@@ -1,0 +1,17 @@
+# face-recog 설정
+model:
+  name: "buffalo_sc"          # buffalo_sc(경량/빠름) | buffalo_l(고정밀)
+  det_size: 480               # 검출 입력 크기 (검출률↑; 스레드 grabber로 지연 보완)
+  providers: ["CPUExecutionProvider"]   # GPU: ["CUDAExecutionProvider"]
+
+recognition:
+  tolerance: 0.40             # cosine 유사도 임계값 (높을수록 엄격, 권장 0.35~0.50)
+  min_face_size: 40           # 최소 얼굴 크기(px) — 작게 보이는 얼굴도 검출
+
+camera:
+  index: 0
+  width: 640
+  height: 480
+
+face_db:
+  dir: "../pinky_yolo/face_db"   # pinky_yolo(ai_node.py)와 공유 — known/<name>/*.jpg + encodings.pkl

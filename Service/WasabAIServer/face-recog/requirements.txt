@@ -1,0 +1,9 @@
+# face-recog — 격리 venv 전용 (MOCA colcon 워크스페이스와 분리)
+insightface>=0.7.3
+onnxruntime>=1.17        # GPU: onnxruntime-gpu
+opencv-python>=4.9
+numpy>=1.26,<2.0
+PyYAML>=6.0
+argcomplete>=3.0         # 선택: 탭 자동완성
+mediapipe==0.10.14       # MOCA 검증 핀. 현재 코드 미사용(향후 liveness/랜드마크용).
+                         # 주의: numpy 2.x + opencv-contrib 를 끌고 옴 → 설치 후 정리 필요(README 참조)
