@@ -1,0 +1,27 @@
+{
+    "ROS2.distro": "jazzy",
+    "python.autoComplete.extraPaths": [
+        "/home/ane/dev_ws/wasab/install/pinky_yolo/lib/python3.12/site-packages",
+        "/home/ane/dev_ws/wasab/install/pinky_led/lib/python3.12/site-packages",
+        "/home/ane/dev_ws/wasab/install/pinky_interfaces/lib/python3.12/site-packages",
+        "/home/ane/dev_ws/wasab/install/pinky_emotion/lib/python3.12/site-packages",
+        "/home/ane/dev_ws/wasab/install/pinky_bringup/lib/python3.12/site-packages",
+        "/home/ane/pinky_pro/install/pinky_led/lib/python3.12/site-packages",
+        "/home/ane/pinky_pro/install/pinky_interfaces/lib/python3.12/site-packages",
+        "/home/ane/pinky_pro/install/pinky_emotion/lib/python3.12/site-packages",
+        "/home/ane/pinky_pro/install/pinky_bringup/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/ane/dev_ws/wasab/install/pinky_yolo/lib/python3.12/site-packages",
+        "/home/ane/dev_ws/wasab/install/pinky_led/lib/python3.12/site-packages",
+        "/home/ane/dev_ws/wasab/install/pinky_interfaces/lib/python3.12/site-packages",
+        "/home/ane/dev_ws/wasab/install/pinky_emotion/lib/python3.12/site-packages",
+        "/home/ane/dev_ws/wasab/install/pinky_bringup/lib/python3.12/site-packages",
+        "/home/ane/pinky_pro/install/pinky_led/lib/python3.12/site-packages",
+        "/home/ane/pinky_pro/install/pinky_interfaces/lib/python3.12/site-packages",
+        "/home/ane/pinky_pro/install/pinky_emotion/lib/python3.12/site-packages",
+        "/home/ane/pinky_pro/install/pinky_bringup/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ]
+}
