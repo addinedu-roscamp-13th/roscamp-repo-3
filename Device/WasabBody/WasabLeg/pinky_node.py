@@ -2,6 +2,10 @@ import sys
 sys.path.insert(0, "/opt/ros/jazzy/lib/python3.12/site-packages")
 sys.path.insert(0, "/home/pinky/.local/lib/python3.12/site-packages")
 
+import os
+import signal
+import subprocess
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
@@ -19,6 +23,26 @@ JPEG_QUALITY = 80
 MOTOR_MIN    = -100
 MOTOR_MAX    = 100
 LCD_EVERY    = 3   # N 프레임마다 LCD 갱신
+
+# ── 라이다 드라이버(sllidar_ros2) 서브프로세스 기동 ────────────────────────────
+# 주의: PC 저장소의 bringup_robot.launch.xml 원본은 serial_port 기본값이 ttyAMA0로
+# 되어 있지만, 이 로봇에 실제 설치된 사본(~/pinky_pro/install/.../bringup_robot.launch.xml)은
+# ttyS0로 커스터마이징되어 있음 — 로봇 실기로 직접 확인(2026-07-10, 오전 캘리브레이션
+# 세션에서 정상 동작 검증된 값). PC 원본과 로봇 실치본이 다르다는 점 주의.
+# 추종 로봇은 그 launch를 안 쓰므로 여기서 직접 띄운다
+# (wasab_robot_agent의 서브프로세스 launch 제어와 같은 패턴).
+# shell=True로 bash를 거쳐야 ros2 CLI가 PATH에서 정상적으로 찾아짐
+# (subprocess에 인자 리스트를 직접 넘기면 ros2를 못 찾는 것 실기로 확인, 2026-07-10).
+# sllidar_ros2는 /opt/ros/jazzy가 아니라 ~/pinky_pro/install 워크스페이스에 설치돼
+# 있어서, local_setup.bash도 같이 소싱해야 패키지를 찾음(실기로 원인 확인, 2026-07-10).
+LIDAR_LAUNCH_CMD = (
+    "source /opt/ros/jazzy/setup.bash && "
+    "source /home/pinky/pinky_pro/install/local_setup.bash && "
+    "ros2 launch sllidar_ros2 sllidar_c1_launch.py "
+    "serial_port:=/dev/ttyS0 frame_id:=rplidar_link "
+    "inverted:=false angle_compensate:=true scan_mode:=DenseBoost"
+)
+LIDAR_SHUTDOWN_TIMEOUT = 5.0
 
 # ── 제스처 연동 LED (PC ai_node.py → /wasab/led_state) ───────────────────────
 LED_STATE_TOPIC = "/wasab/led_state"
@@ -57,7 +81,11 @@ class PinkyNode(Node):
         self._led_off_timer = None
         self.create_subscription(String, LED_STATE_TOPIC, self.led_state_cb, 10)
 
-        self.get_logger().info("PinkyNode 시작 — 카메라 & 모터 & LCD & LED 준비됨")
+        # 라이다 드라이버 서브프로세스 (거리재급/회피용 /scan 발행)
+        self._lidar_proc = subprocess.Popen(
+            LIDAR_LAUNCH_CMD, shell=True, executable="/bin/bash", start_new_session=True)
+
+        self.get_logger().info("PinkyNode 시작 — 카메라 & 모터 & LCD & LED & 라이다 준비됨")
 
     def timer_cb(self):
         frame = self.cam.get_frame()
@@ -109,6 +137,18 @@ class PinkyNode(Node):
             self._led_off_timer.cancel()
             self._led_off_timer = None
 
+    def _stop_lidar(self):
+        if self._lidar_proc is None:
+            return
+        try:
+            os.killpg(os.getpgid(self._lidar_proc.pid), signal.SIGINT)
+            self._lidar_proc.wait(timeout=LIDAR_SHUTDOWN_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(self._lidar_proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        self._lidar_proc = None
+
     def destroy_node(self):
         self.motor.stop()
         self.motor.disable_motor()
@@ -117,6 +157,7 @@ class PinkyNode(Node):
         self.lcd.close()
         self.led.clear()
         self.led.close()
+        self._stop_lidar()
         super().destroy_node()
 
 

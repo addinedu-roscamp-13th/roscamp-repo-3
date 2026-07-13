@@ -8,7 +8,7 @@
 #       --show-view    얼굴 bbox + 손목 점 오버레이 창
 #   -h, --help         이 도움말
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOST=192.168.0.86; PORT=8090; SHOW=0
 FR_DIR="$ROOT/face-recog"; VENV_PY="${FACE_VENV:-$HOME/face-recog/.venv}/bin/python"
 usage() { grep -E '^# ' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; }
@@ -31,10 +31,16 @@ if [ ! -x "$VENV_PY" ]; then
   exit 1
 fi
 
-# rclpy 환경 (perception_node 는 .venv python 이지만 ROS PYTHONPATH 필요)
+# rclpy 환경 (perception_node 는 .venv python 이지만 ROS PYTHONPATH 필요).
+# perception_node.py가 wasab_k3_mimic(제스처 로직) 패키지를 직접 import 하므로
+# 시스템 ROS만으론 부족 — colcon으로 빌드된 워크스페이스 install이 필요함.
+# 이 파일은 <워크스페이스>/src/roscamp-repo-3/Service/WasabAIServer/ 에 있다고 가정하고
+# 4단계 위(<워크스페이스>/install/setup.bash)를 소싱한다. 다른 위치에 두는 경우
+# WS_INSTALL 환경변수로 override.
+WS_INSTALL="${WS_INSTALL:-$ROOT/../../../../install/setup.bash}"
 set +eu
 # shellcheck source=/dev/null
-source "$ROOT/install/setup.bash"
+source "$WS_INSTALL"
 set -u
 
 ARGS=(--source "$STREAM")

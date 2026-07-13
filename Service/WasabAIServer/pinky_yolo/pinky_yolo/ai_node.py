@@ -1,3 +1,4 @@
+import math
 import os
 import threading
 import time
@@ -8,7 +9,7 @@ import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
-from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import CompressedImage, LaserScan
 from std_msgs.msg import String
 from ultralytics import YOLO
 
@@ -18,8 +19,25 @@ except ImportError:
     from face_recognizer import FaceRecognizer
 
 # ── 경로 설정 ─────────────────────────────────────────────────────────────────
-_PKG_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FACE_DB_DIR = os.path.join(_PKG_DIR, "face_db")
+def _find_face_db_dir():
+    # 1) python3 ai_node.py로 소스에서 직접 실행한 경우
+    src_relative = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "face_db")
+    if os.path.isdir(os.path.join(src_relative, "known")):
+        return src_relative
+    # 2) colcon install 후 ros2 run(예: run_ai.sh)으로 실행한 경우
+    try:
+        from ament_index_python.packages import get_package_prefix
+        ws_root = os.path.dirname(os.path.dirname(get_package_prefix("pinky_yolo")))
+        candidate = os.path.join(
+            ws_root, "src", "roscamp-repo-3", "Service", "WasabAIServer",
+            "pinky_yolo", "face_db")
+        if os.path.isdir(candidate):
+            return candidate
+    except Exception:
+        pass
+    return src_relative  # 못 찾으면 1번 값이라도 반환
+
+FACE_DB_DIR = _find_face_db_dir()
 YOLO_MODEL  = "yolov8n.pt"
 
 # ── 얼굴 인식 (InsightFace SCRFD + ArcFace) ───────────────────────────────────
@@ -54,6 +72,17 @@ SEEN_GRACE = 0.5
 # ── 제스처 연동 (JetCobot perception_node.py → domain 51 브리지) ─────────────
 GESTURE_CMD_TOPIC = "/wasab/gesture_cmd"   # 구독: PAUSE/START
 LED_STATE_TOPIC    = "/wasab/led_state"    # 발행: raspi pinky_node.py가 LED 제어
+
+# ── 라이다 기반 거리재급/회피 ─────────────────────────────────────────────────
+LIDAR_STOP_DIST = 0.10   # m, 이내면 TOO_CLOSE (얼굴 bbox 기준과 OR) — 목표 정지거리 10cm
+AVOID_DIST      = 0.07   # m, 이내면 AVOID 진입 — 선생님 미인식(SEARCH/LOST) 중에만 적용 (실기 테스트 후 0.35→0.07로 좁힘)
+AVOID_ANGULAR   = 12.0   # 회피 조향 속도
+FRONT_CONE_DEG  = 30.0   # 정면 판단 반각(양쪽 합 60도) — angle 0 = 로봇 정면 가정
+
+# ── FOLLOW 중 장애물 회피(선회하며 계속 추종) ─────────────────────────────────
+SWERVE_DIST       = 0.45   # m, 라이다 정면이 이내로 가까운데
+SWERVE_BBOX_RATIO = 0.7    # bbox_h가 DIST_STOP의 이 비율 미만이면 "얼굴은 안 가까움" → 장애물로 판단
+SWERVE_BLEND      = 0.5    # 회피 조향이 PD 조향에 섞이는 비율
 
 
 def select_teacher(face_db_dir: str) -> str:
@@ -142,6 +171,13 @@ class AiNode(Node):
         self.create_subscription(
             String, GESTURE_CMD_TOPIC, self.gesture_cmd_cb, 10)
 
+        # 라이다: 거리재급/회피 (PinkyNode가 sllidar_ros2를 서브프로세스로 기동)
+        self.create_subscription(LaserScan, "/scan", self.scan_cb, 10)
+        self.scan_front = None
+        self.scan_left  = None
+        self.scan_right = None
+        self.swerving   = False   # FOLLOW 중 장애물 회피 조향이 섞이고 있는지(시각화용)
+
         # ── InsightFace 백그라운드 스레드 ────────────────────────────────────
         self._latest_frame  = None          # 메인 → 스레드로 최신 프레임 전달
         self._face_results  = []            # 스레드 → 메인으로 인식 결과 전달
@@ -192,6 +228,25 @@ class AiNode(Node):
         elif msg.data == "START" and self.e_stop:
             self.get_logger().info("제스처 START 수신")
             self._set_e_stop(False)
+
+    def scan_cb(self, msg: LaserScan):
+        """정면(±FRONT_CONE_DEG)/좌/우 최소 거리 계산. angle 0 = 로봇 정면 가정."""
+        front_cone = math.radians(FRONT_CONE_DEG)
+        front_vals, left_vals, right_vals = [], [], []
+        for i, r in enumerate(msg.ranges):
+            if not (msg.range_min < r < msg.range_max):
+                continue
+            angle = msg.angle_min + i * msg.angle_increment
+            a = (angle + math.pi) % (2 * math.pi) - math.pi  # -pi..pi 정규화
+            if abs(a) <= front_cone:
+                front_vals.append(r)
+            elif 0 < a <= math.pi / 2:
+                left_vals.append(r)
+            elif -math.pi / 2 <= a < 0:
+                right_vals.append(r)
+        self.scan_front = min(front_vals) if front_vals else None
+        self.scan_left  = min(left_vals) if left_vals else None
+        self.scan_right = min(right_vals) if right_vals else None
 
     def _face_worker(self):
         """InsightFace를 별도 스레드에서 실행 — 메인 루프를 블로킹하지 않음."""
@@ -249,6 +304,7 @@ class AiNode(Node):
 
         # ── 상태 머신 + cmd_vel ───────────────────────────────────────────────
         twist = Twist()
+        self.swerving = False
 
         if self.e_stop:
             self.state = "E-STOP"
@@ -257,8 +313,9 @@ class AiNode(Node):
             x1, y1, x2, y2 = teacher_box
             bbox_h = y2 - y1
             error  = (x1 + x2) // 2 - CENTER_X
+            lidar_too_close = self.scan_front is not None and self.scan_front < LIDAR_STOP_DIST
 
-            if bbox_h >= DIST_STOP:
+            if bbox_h >= DIST_STOP or lidar_too_close:
                 self.state = "TOO_CLOSE"
             else:
                 self.state = "FOLLOW"
@@ -267,11 +324,37 @@ class AiNode(Node):
                     correction = float(np.clip(KP * error + KD * d_err, -MAX_ANGULAR, MAX_ANGULAR))
                 else:
                     correction = 0.0
+
+                # 라이다는 가까운데 얼굴(bbox)은 아직 안 가까움 → 선생님이 아닌 장애물로 판단,
+                # 완전 정지 대신 조향에 회피 방향을 섞어서 피하며 계속 추종
+                obstacle_mismatch = (
+                    self.scan_front is not None
+                    and self.scan_front < SWERVE_DIST
+                    and bbox_h < DIST_STOP * SWERVE_BBOX_RATIO
+                )
+                self.swerving = obstacle_mismatch
+                if obstacle_mismatch:
+                    left_clear  = self.scan_left  if self.scan_left  is not None else float("inf")
+                    right_clear = self.scan_right if self.scan_right is not None else float("inf")
+                    swerve = AVOID_ANGULAR if left_clear >= right_clear else -AVOID_ANGULAR
+                    correction = float(np.clip(
+                        correction + SWERVE_BLEND * swerve,
+                        -MAX_ANGULAR * 1.5, MAX_ANGULAR * 1.5))
+
                 centering = 1.0 - min(abs(error) / CENTER_X, 1.0)
                 twist.linear.x  = float(np.clip(self.motor_base * centering, 0.0, MOTOR_MAX))
                 twist.angular.z = correction
 
             self.prev_error = float(error)
+
+        elif self.scan_front is not None and self.scan_front < AVOID_DIST:
+            # 선생님을 놓친 상태(SEARCH/LOST 대상)에서만 순수 라이다 회피 적용
+            self.state = "AVOID"
+            twist.linear.x = 0.0
+            left_clear  = self.scan_left  if self.scan_left  is not None else float("inf")
+            right_clear = self.scan_right if self.scan_right is not None else float("inf")
+            twist.angular.z = AVOID_ANGULAR if left_clear >= right_clear else -AVOID_ANGULAR
+            self.prev_error = 0.0
 
         else:
             elapsed = t_now - self.last_seen
@@ -306,9 +389,17 @@ class AiNode(Node):
             cv2.putText(vis, label, (fx1, fy1 - 6),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
-        state_color = (0, 0, 220) if self.state == "E-STOP" else (0, 255, 255)
-        cv2.putText(vis, f"[{self.state}]  speed:{self.motor_base:.0f}", (8, 28),
+        state_color = (0, 0, 220) if self.state in ("E-STOP", "AVOID") else (0, 255, 255)
+        swerve_tag  = "  [SWERVE]" if self.swerving else ""
+        cv2.putText(vis, f"[{self.state}]  speed:{self.motor_base:.0f}{swerve_tag}", (8, 28),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, state_color, 2)
+
+        # 라이다 정면/좌/우 거리 표시 (AVOID_DIST / LIDAR_STOP_DIST 값 조정용)
+        sf = f"{self.scan_front:.2f}" if self.scan_front is not None else "-"
+        sl = f"{self.scan_left:.2f}"  if self.scan_left  is not None else "-"
+        sr = f"{self.scan_right:.2f}" if self.scan_right is not None else "-"
+        cv2.putText(vis, f"lidar F:{sf} L:{sl} R:{sr}  avoid:{AVOID_DIST} stop:{LIDAR_STOP_DIST}",
+                    (8, 78), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
 
         # 선생님 얼굴 박스 높이 표시 (DIST_STOP / DIST_FOLLOW 값 조정용)
         if teacher_box is not None:

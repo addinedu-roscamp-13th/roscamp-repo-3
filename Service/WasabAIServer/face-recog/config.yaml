@@ -14,4 +14,4 @@ camera:
   height: 480
 
 face_db:
-  dir: "face_db"              # known/<name>/*.jpg + encodings.pkl
+  dir: "../pinky_yolo/face_db"   # pinky_yolo(ai_node.py)와 공유 — known/<name>/*.jpg + encodings.pkl
