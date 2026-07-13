@@ -1,3 +1,11 @@
+# 얼굴 등록 데이터 (개인정보 — git에 올리지 않음, 폴더 구조만 유지)
+Service/WasabAIServer/pinky_yolo/face_db/known/*
+!Service/WasabAIServer/pinky_yolo/face_db/known/.gitkeep
+Service/WasabAIServer/pinky_yolo/face_db/encodings.pkl
+Service/WasabAIServer/face-recog/face_db/known/*
+!Service/WasabAIServer/face-recog/face_db/known/.gitkeep
+Service/WasabAIServer/face-recog/face_db/encodings.pkl
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
