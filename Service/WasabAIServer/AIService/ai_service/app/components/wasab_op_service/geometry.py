@@ -14,7 +14,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from app.settings import Settings
+from Service.WasabAIServer.AIService.ai_service.app.settings import Settings
 
 
 class WaSaBOperationPlanError(RuntimeError):

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uvicorn
 
-from app.settings import settings
+from Service.WasabAIServer.AIService.ai_service.app.settings import settings
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
 """Compatibility wrapper for the WaSaBWebService component."""
-from app.components.wasab_web_service.service import app
+from Service.WasabAIServer.AIService.ai_service.app.components.wasab_web_service.service import app
 
 __all__ = ["app"]
