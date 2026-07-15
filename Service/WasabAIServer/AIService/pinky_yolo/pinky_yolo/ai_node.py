@@ -28,9 +28,7 @@ def _find_face_db_dir():
     try:
         from ament_index_python.packages import get_package_prefix
         ws_root = os.path.dirname(os.path.dirname(get_package_prefix("pinky_yolo")))
-        candidate = os.path.join(
-            ws_root, "src", "roscamp-repo-3", "Service", "WasabAIServer",
-            "pinky_yolo", "face_db")
+        candidate = os.path.join(ws_root, "src", "pinky_yolo", "face_db")
         if os.path.isdir(candidate):
             return candidate
     except Exception:
@@ -64,6 +62,7 @@ DIST_FOLLOW = 300   # 이보다 멀면 전진
 SEARCH_ANGULAR    = 10.0
 SEARCH_SWING_TIME = 1.5
 LOST_TIMEOUT      = 9.0
+LOST_ESTOP_SEC    = 21.0
 
 # ── YOLO 스킵 (InsightFace는 스레드로 분리되어 스킵 불필요) ──────────────────
 YOLO_SKIP  = 3
@@ -203,23 +202,43 @@ class AiNode(Node):
         self.get_logger().info("AiNode 시작 — 대기 중 (START 제스처 또는 Space로 추종 시작)")
         self.get_logger().info("[Space] 추종 시작/정지  [+/-] 속도조절  [q] 종료")
 
+
     def _set_e_stop(self, value: bool):
+
         """e_stop 토글. PAUSE만 LED를 직접 켬(3초 빨강) — FOLLOWING 초록은 실제 FOLLOW 상태에서만."""
+
         self.e_stop = value
         self.get_logger().info("긴급 정지 ON" if value else "긴급 정지 해제")
+
         if value:
             self.led_pub.publish(String(data="PAUSED"))
 
+
     def _sync_led(self):
+
         """매 프레임 state 변화 감지 → FOLLOW면 초록, 그 외(SEARCH/LOST/TOO_CLOSE)면 꺼짐.
         E-STOP 진입 시의 빨강 3초는 _set_e_stop이 이미 처리하므로 여기선 건드리지 않는다."""
+
         if self.state == self._last_led_state:
             return
+        
         self._last_led_state = self.state
-        if self.state == "FOLLOW":
+
+        if self.state == "TOO_CLOSE":
+            self.led_pub.publish(String(data="HOLD"))
+
+        elif self.state == "FOLLOW":
             self.led_pub.publish(String(data="FOLLOWING"))
-        elif self.state != "E-STOP":
+
+        elif self.state in ("SEARCH", "LOST", "AVOID"):
+            self.led_pub.publish(String(data="WARNING"))
+
+        elif self.state == "E-STOP":
+            self.led_pub.publish(String(data="PAUSED"))
+
+        else:
             self.led_pub.publish(String(data="OFF"))
+
 
     def gesture_cmd_cb(self, msg: String):
         if msg.data == "PAUSE" and not self.e_stop:
@@ -358,16 +377,32 @@ class AiNode(Node):
 
         else:
             elapsed = t_now - self.last_seen
+
             if elapsed < LOST_TIMEOUT:
                 # 두리번거리기: 매 SEARCH_SWING_TIME 초마다 방향 전환
                 self.state = "SEARCH"
+
                 swing_idx = int(elapsed / SEARCH_SWING_TIME)
                 direction = self.last_error_dir * ((-1.0) ** swing_idx)
+
+                twist.linear.x = 0.0
                 twist.angular.z = float(direction * SEARCH_ANGULAR)
+
+            elif elapsed < LOST_ESTOP_SEC:
+                self.state = "LOST"
+
+                twist.linear.x = 0.0
+                twist.angular.z = float(self.last_error_dir * SEARCH_ANGULAR * 0.5)
+
             else:
                 # LOST: 느린 속도로 한 방향 계속 회전하며 탐색
-                self.state = "LOST"
-                twist.angular.z = float(self.last_error_dir * SEARCH_ANGULAR * 0.5)
+                self.state = "E-STOP"
+
+                twist.linear.x  = 0.0
+                twist.angular.z = 0.0
+
+                self._set_e_stop(True)
+
             self.prev_error = 0.0
 
         self.pub.publish(twist)

@@ -7,6 +7,6 @@ split without changing the uvicorn import path: ``app.main:app``.
 """
 from __future__ import annotations
 
-from app.components.wasab_web_service.service import app
+from Service.WasabAIServer.AIService.ai_service.app.components.wasab_web_service.service import app
 
 __all__ = ["app"]
