@@ -10,6 +10,7 @@ Service/WasabAIServer/face-recog/face_db/encodings.pkl
 __pycache__/
 *.py[codz]
 *$py.class
+*.pyc
 
 # C extensions
 *.so
@@ -232,7 +233,20 @@ log/
 
 
 # VSCode generated cache
+.vscode
 .vscode/browse.vc.db
 .vscode/browse.vc.db-*
 .vscode/ipch/
+.vscode/c_pp_properties.json
+.vscode/settings.json
+
+
+# ROS build files
+build/
+install/
+log/
+
+
+
+
 EOF
