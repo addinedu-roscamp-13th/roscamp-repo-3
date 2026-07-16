@@ -11,7 +11,6 @@ from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import CompressedImage, LaserScan
 from std_msgs.msg import String
-from ultralytics import YOLO
 
 try:
     from pinky_yolo.face_recognizer import FaceRecognizer
@@ -36,7 +35,6 @@ def _find_face_db_dir():
     return src_relative  # 못 찾으면 1번 값이라도 반환
 
 FACE_DB_DIR = _find_face_db_dir()
-YOLO_MODEL  = "yolov8n.pt"
 
 # ── 얼굴 인식 (InsightFace SCRFD + ArcFace) ───────────────────────────────────
 FACE_TOLERANCE = 0.40   # 먼 거리에서도 인식되도록 완화 (기존 0.45) — 오인식 늘어나면 다시 올릴 것
@@ -47,41 +45,34 @@ MOTOR_BASE  = 40.0
 MOTOR_MIN   =  5.0
 MOTOR_MAX   = 80.0
 KP          = 0.05
-KD          = 0.2
+KD          = 0.05
 DEADZONE    = 20
-MAX_ANGULAR = 11.0
+MAX_ANGULAR = 6.0
 
 FRAME_W  = 640
 CENTER_X = FRAME_W // 2
 
-# ── 거리 임계값 ───────────────────────────────────────────────────────────────
-DIST_STOP   = 150   # 얼굴 bbox 높이 기준 ~10cm 이상에서 정지하도록 하향 (기존 250)
-DIST_FOLLOW = 300   # 이보다 멀면 전진
-
 # ── 두리번거리기 탐색 ─────────────────────────────────────────────────────────
-SEARCH_ANGULAR    = 10.0
-SEARCH_SWING_TIME = 1.5
-LOST_TIMEOUT      = 9.0
-LOST_ESTOP_SEC    = 21.0
+SEARCH_ANGULAR         = 10.0
+SEARCH_SWING_TIME      = 0.5
+SEARCH_SWING_INCREMENT = 0.25
+SEARCH_SWING_CYCLES    = 3
+LOST_TIMEOUT           = 9.0
+LOST_ESTOP_SEC         = 36.0
 
-# ── YOLO 스킵 (InsightFace는 스레드로 분리되어 스킵 불필요) ──────────────────
-YOLO_SKIP  = 3
 SEEN_GRACE = 0.5
 
 # ── 제스처 연동 (JetCobot perception_node.py → domain 51 브리지) ─────────────
 GESTURE_CMD_TOPIC = "/wasab/gesture_cmd"   # 구독: PAUSE/START
-LED_STATE_TOPIC    = "/wasab/led_state"    # 발행: raspi pinky_node.py가 LED 제어
+LED_STATE_TOPIC   = "/wasab/led_state"     # 발행: raspi pinky_node.py가 LED 제어
 
 # ── 라이다 기반 거리재급/회피 ─────────────────────────────────────────────────
-LIDAR_STOP_DIST = 0.10   # m, 이내면 TOO_CLOSE (얼굴 bbox 기준과 OR) — 목표 정지거리 10cm
-AVOID_DIST      = 0.07   # m, 이내면 AVOID 진입 — 선생님 미인식(SEARCH/LOST) 중에만 적용 (실기 테스트 후 0.35→0.07로 좁힘)
-AVOID_ANGULAR   = 12.0   # 회피 조향 속도
-FRONT_CONE_DEG  = 30.0   # 정면 판단 반각(양쪽 합 60도) — angle 0 = 로봇 정면 가정
-
-# ── FOLLOW 중 장애물 회피(선회하며 계속 추종) ─────────────────────────────────
-SWERVE_DIST       = 0.45   # m, 라이다 정면이 이내로 가까운데
-SWERVE_BBOX_RATIO = 0.7    # bbox_h가 DIST_STOP의 이 비율 미만이면 "얼굴은 안 가까움" → 장애물로 판단
-SWERVE_BLEND      = 0.5    # 회피 조향이 PD 조향에 섞이는 비율
+TOO_CLOSE_DIST   = 0.15   # m, 이내면 TOO_CLOSE (얼굴 bbox 기준과 OR) — 목표 정지거리 10cm
+OBSTACLE_DIST    = 0.10
+LIDAR_SLOW_DIST  = 0.25   # m, 이 거리부터 서서히 감속 시작 (LIDAR_STOP_DIST에서 속도 0)
+FRONT_CONE_DEG   = 30.0   # 정면 판단 반각(양쪽 합 60도) — angle 0 = 로봇 정면 가정
+FRONT_OFFSET_DEG = 180.0  # 라이다가 물리적으로 반대(뒤)를 보게 장착되어 있어서 보정
+                          # (2026-07-15 실기 확인: 진짜 정면에 장애물을 놔도 F/L/R 전부 무반응 → 180도 회전 장착으로 판단)
 
 
 def select_teacher(face_db_dir: str) -> str:
@@ -123,16 +114,6 @@ def decode_compressed(msg: CompressedImage) -> np.ndarray:
     return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
 
-def detect_persons(model, frame, conf=0.45):
-    results = model(frame, verbose=False, conf=conf, classes=[0], imgsz=320)
-    boxes = []
-    for r in results:
-        for b in r.boxes:
-            x1, y1, x2, y2 = map(int, b.xyxy[0].tolist())
-            boxes.append((x1, y1, x2, y2, float(b.conf)))
-    return boxes
-
-
 class AiNode(Node):
     def __init__(self, teacher: str):
         super().__init__("ai_node")
@@ -151,9 +132,6 @@ class AiNode(Node):
             raise RuntimeError("InsightFace 로드 실패")
         self.get_logger().info(f"추종 대상: {self.teacher}")
 
-        # YOLO
-        self.model = YOLO(YOLO_MODEL)
-        self.get_logger().info("YOLO 로드 완료")
 
         # ROS
         qos = QoSProfile(
@@ -175,7 +153,6 @@ class AiNode(Node):
         self.scan_front = None
         self.scan_left  = None
         self.scan_right = None
-        self.swerving   = False   # FOLLOW 중 장애물 회피 조향이 섞이고 있는지(시각화용)
 
         # ── InsightFace 백그라운드 스레드 ────────────────────────────────────
         self._latest_frame  = None          # 메인 → 스레드로 최신 프레임 전달
@@ -188,7 +165,6 @@ class AiNode(Node):
 
         # 상태
         self.frame_count      = 0
-        self.last_boxes       = []
         self.last_teacher_box = None
         self.last_seen        = time.time()  # 시작부터 SEARCH 상태로
         self.last_error_dir   = 1.0
@@ -203,12 +179,14 @@ class AiNode(Node):
         self.get_logger().info("[Space] 추종 시작/정지  [+/-] 속도조절  [q] 종료")
 
 
-    def _set_e_stop(self, value: bool):
+    def _set_e_stop(self, value: bool, reason: str = "MANUAL"):
 
-        """e_stop 토글. PAUSE만 LED를 직접 켬(3초 빨강) — FOLLOWING 초록은 실제 FOLLOW 상태에서만."""
+        """e_stop 토글. TOO_CLOSE/SEARCH(장애물)는 이 함수를 안 거치는 별개의 자동 상태(START 불필요) —
+        이 함수가 True로 호출되면 항상 E-STOP(빨강, START로만 해제)이다.
+        reason은 로그 구분용(MANUAL/LOST)."""
 
         self.e_stop = value
-        self.get_logger().info("긴급 정지 ON" if value else "긴급 정지 해제")
+        self.get_logger().info(f"긴급 정지 ON ({reason})" if value else f"긴급 정지 해제")
 
         if value:
             self.led_pub.publish(String(data="PAUSED"))
@@ -230,7 +208,7 @@ class AiNode(Node):
         elif self.state == "FOLLOW":
             self.led_pub.publish(String(data="FOLLOWING"))
 
-        elif self.state in ("SEARCH", "LOST", "AVOID"):
+        elif self.state in ("SEARCH", "LOST"):
             self.led_pub.publish(String(data="WARNING"))
 
         elif self.state == "E-STOP":
@@ -249,20 +227,27 @@ class AiNode(Node):
             self._set_e_stop(False)
 
     def scan_cb(self, msg: LaserScan):
-        """정면(±FRONT_CONE_DEG)/좌/우 최소 거리 계산. angle 0 = 로봇 정면 가정."""
+
+        """정면(±FRONT_CONE_DEG)/좌/우 최소 거리 계산. FRONT_OFFSET_DEG로 장착 방향 보정."""
+
         front_cone = math.radians(FRONT_CONE_DEG)
+        front_offset = math.radians(FRONT_OFFSET_DEG)
         front_vals, left_vals, right_vals = [], [], []
+
         for i, r in enumerate(msg.ranges):
             if not (msg.range_min < r < msg.range_max):
                 continue
-            angle = msg.angle_min + i * msg.angle_increment
+
+            angle = msg.angle_min + i * msg.angle_increment + front_offset
             a = (angle + math.pi) % (2 * math.pi) - math.pi  # -pi..pi 정규화
+
             if abs(a) <= front_cone:
                 front_vals.append(r)
             elif 0 < a <= math.pi / 2:
                 left_vals.append(r)
             elif -math.pi / 2 <= a < 0:
                 right_vals.append(r)
+
         self.scan_front = min(front_vals) if front_vals else None
         self.scan_left  = min(left_vals) if left_vals else None
         self.scan_right = min(right_vals) if right_vals else None
@@ -285,7 +270,6 @@ class AiNode(Node):
         frame = decode_compressed(msg)
         if frame is None:
             return
-        frame = cv2.flip(frame, 1)
 
         t_now = time.time()
         dt    = max(t_now - self.t_prev, 1e-3)
@@ -299,10 +283,6 @@ class AiNode(Node):
         # 스레드에서 계산된 얼굴 인식 결과 읽기
         with self._face_lock:
             face_results = list(self._face_results)
-
-        # YOLO 사람 감지 (거리 추정용)
-        if self.frame_count % YOLO_SKIP == 0:
-            self.last_boxes = detect_persons(self.model, frame)
 
         # 선생님 얼굴 찾기 (거리 계산은 얼굴 박스로 통일)
         for fr in face_results:
@@ -321,68 +301,89 @@ class AiNode(Node):
             else None
         )
 
+
+        # ── 근접 판정 ────────────────────────────────────────────────────────
+        # 사람/물체 구분 없음, bbox도 안 봄 — 선생님 얼굴이 보이는 동안 라이다 값으로만 판단.
+        # OBSTACLE_DIST~TOO_CLOSE_DIST 사이는 정상 도달 → TOO_CLOSE(별도 상태, 자동복귀).
+        # OBSTACLE_DIST보다 더 가까우면 장애물로 판단하지만, 상태 전환 없이 FOLLOW 라벨 그대로
+        # 두고 속도만 0으로 만든다 (E-STOP도 SEARCH도 아님).
+        is_teacher_close = (
+            teacher_box is not None
+            and self.scan_front is not None
+            and OBSTACLE_DIST <= self.scan_front < TOO_CLOSE_DIST
+        )
+        obstacle_blocking = (
+            teacher_box is not None
+            and self.scan_front is not None
+            and self.scan_front < OBSTACLE_DIST
+        )
+
+
+
         # ── 상태 머신 + cmd_vel ───────────────────────────────────────────────
         twist = Twist()
-        self.swerving = False
 
         if self.e_stop:
             self.state = "E-STOP"
 
+        elif is_teacher_close:
+            # 선생님한테 도달해서 정지 — 자동 상태, START 없이도 거리 벌어지면 바로 FOLLOW로 복귀
+            self.state = "TOO_CLOSE"
+            self.prev_error = 0.0
+
         elif teacher_box is not None:
             x1, y1, x2, y2 = teacher_box
-            bbox_h = y2 - y1
             error  = (x1 + x2) // 2 - CENTER_X
-            lidar_too_close = self.scan_front is not None and self.scan_front < LIDAR_STOP_DIST
+            self.state = "FOLLOW"
 
-            if bbox_h >= DIST_STOP or lidar_too_close:
-                self.state = "TOO_CLOSE"
+            if obstacle_blocking:
+                # 라이다 0.10m 미만 — 장애물로 판단, FOLLOW 라벨 유지한 채 완전 정지
+                correction = 0.0
+                distance_factor = 0.0
             else:
-                self.state = "FOLLOW"
                 if abs(error) >= DEADZONE:
                     d_err = (error - self.prev_error) / dt
-                    correction = float(np.clip(KP * error + KD * d_err, -MAX_ANGULAR, MAX_ANGULAR))
+                    # 2026-07-15: flip 제거만으로는 안 고쳐져서 부호도 같이 반전(테스트 조합 2/2)
+                    correction = -float(np.clip(KP * error + KD * d_err, -MAX_ANGULAR, MAX_ANGULAR))
                 else:
                     correction = 0.0
 
-                # 라이다는 가까운데 얼굴(bbox)은 아직 안 가까움 → 선생님이 아닌 장애물로 판단,
-                # 완전 정지 대신 조향에 회피 방향을 섞어서 피하며 계속 추종
-                obstacle_mismatch = (
-                    self.scan_front is not None
-                    and self.scan_front < SWERVE_DIST
-                    and bbox_h < DIST_STOP * SWERVE_BBOX_RATIO
-                )
-                self.swerving = obstacle_mismatch
-                if obstacle_mismatch:
-                    left_clear  = self.scan_left  if self.scan_left  is not None else float("inf")
-                    right_clear = self.scan_right if self.scan_right is not None else float("inf")
-                    swerve = AVOID_ANGULAR if left_clear >= right_clear else -AVOID_ANGULAR
-                    correction = float(np.clip(
-                        correction + SWERVE_BLEND * swerve,
-                        -MAX_ANGULAR * 1.5, MAX_ANGULAR * 1.5))
+                # 라이다 정면 거리가 LIDAR_SLOW_DIST 이내면 서서히 감속
+                # (LIDAR_SLOW_DIST=1.0배속 → TOO_CLOSE_DIST에서 0배속, 그 사이는 선형 보간)
+                if self.scan_front is not None and self.scan_front < LIDAR_SLOW_DIST:
+                    distance_factor = max(0.0, (self.scan_front - TOO_CLOSE_DIST) / (LIDAR_SLOW_DIST - TOO_CLOSE_DIST))
+                else:
+                    distance_factor = 1.0
 
-                centering = 1.0 - min(abs(error) / CENTER_X, 1.0)
-                twist.linear.x  = float(np.clip(self.motor_base * centering, 0.0, MOTOR_MAX))
-                twist.angular.z = correction
-
+            centering = 1.0 - min(abs(error) / CENTER_X, 1.0)
+            twist.linear.x  = float(np.clip(self.motor_base * centering * distance_factor, 0.0, MOTOR_MAX))
+            twist.angular.z = correction
             self.prev_error = float(error)
 
-        elif self.scan_front is not None and self.scan_front < AVOID_DIST:
-            # 선생님을 놓친 상태(SEARCH/LOST 대상)에서만 순수 라이다 회피 적용
-            self.state = "AVOID"
-            twist.linear.x = 0.0
-            left_clear  = self.scan_left  if self.scan_left  is not None else float("inf")
-            right_clear = self.scan_right if self.scan_right is not None else float("inf")
-            twist.angular.z = AVOID_ANGULAR if left_clear >= right_clear else -AVOID_ANGULAR
-            self.prev_error = 0.0
-
         else:
+            # 얼굴 자체가 안 보임 → 두리번거리며 탐색
             elapsed = t_now - self.last_seen
 
             if elapsed < LOST_TIMEOUT:
                 # 두리번거리기: 매 SEARCH_SWING_TIME 초마다 방향 전환
                 self.state = "SEARCH"
 
-                swing_idx = int(elapsed / SEARCH_SWING_TIME)
+                remaining = elapsed
+                swing_time = SEARCH_SWING_TIME
+
+                for cycle in range(SEARCH_SWING_CYCLES):
+                    swing_time = (SEARCH_SWING_TIME + cycle * SEARCH_SWING_INCREMENT)
+
+                    cycle_duration = swing_time * 4.0
+
+                    if remaining < cycle_duration:
+                        break
+
+                    remaining -= cycle_duration
+
+                phase_idx = int(remaining / swing_time)
+                swing_pattern = (0, 1, 1, 0)
+                swing_idx = swing_pattern[phase_idx]
                 direction = self.last_error_dir * ((-1.0) ** swing_idx)
 
                 twist.linear.x = 0.0
@@ -401,7 +402,7 @@ class AiNode(Node):
                 twist.linear.x  = 0.0
                 twist.angular.z = 0.0
 
-                self._set_e_stop(True)
+                self._set_e_stop(True, "LOST")
 
             self.prev_error = 0.0
 
@@ -410,9 +411,6 @@ class AiNode(Node):
 
         # ── 시각화 ───────────────────────────────────────────────────────────
         vis = frame.copy()
-
-        for (x1, y1, x2, y2, _) in self.last_boxes:
-            cv2.rectangle(vis, (x1, y1), (x2, y2), (255, 140, 0), 1)
 
         for fr in face_results:
             fx1, fy1, fx2, fy2 = fr.bbox
@@ -424,29 +422,39 @@ class AiNode(Node):
             cv2.putText(vis, label, (fx1, fy1 - 6),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
-        state_color = (0, 0, 220) if self.state in ("E-STOP", "AVOID") else (0, 255, 255)
-        swerve_tag  = "  [SWERVE]" if self.swerving else ""
-        cv2.putText(vis, f"[{self.state}]  speed:{self.motor_base:.0f}{swerve_tag}", (8, 28),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, state_color, 2)
+        # 상태/속도/라이다 — 텍스트마다 불투명 배경 박스(카메라 배경과 무관하게 항상 잘 보이도록)
+        STATE_COLORS = {
+            "FOLLOW":    (0, 150, 0),     # 초록
+            "TOO_CLOSE": (200, 40, 0),    # 파랑
+            "SEARCH":    (0, 110, 230),   # 주황
+            "LOST":      (0, 110, 230),   # 주황
+            "E-STOP":    (0, 0, 210),     # 빨강
+        }
+        WHITE, YELLOW, BLACK = (255, 255, 255), (0, 255, 255), (0, 0, 0)
 
-        # 라이다 정면/좌/우 거리 표시 (AVOID_DIST / LIDAR_STOP_DIST 값 조정용)
-        sf = f"{self.scan_front:.2f}" if self.scan_front is not None else "-"
-        sl = f"{self.scan_left:.2f}"  if self.scan_left  is not None else "-"
-        sr = f"{self.scan_right:.2f}" if self.scan_right is not None else "-"
-        cv2.putText(vis, f"lidar F:{sf} L:{sl} R:{sr}  avoid:{AVOID_DIST} stop:{LIDAR_STOP_DIST}",
-                    (8, 78), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+        def draw_chip(text, x, y, scale, text_color, bg_color, thickness=2):
+            (tw, th), base = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+            cv2.rectangle(vis, (x, y), (x + tw + 16, y + th + base + 12), bg_color, -1)
+            cv2.putText(vis, text, (x + 8, y + th + 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, scale, text_color, thickness, cv2.LINE_AA)
+            return y + th + base + 12 + 8   # 다음 줄 y 시작점
 
-        # 선생님 얼굴 박스 높이 표시 (DIST_STOP / DIST_FOLLOW 값 조정용)
-        if teacher_box is not None:
-            bh = teacher_box[3] - teacher_box[1]
-            cv2.putText(vis, f"bbox_h:{bh}  stop:{DIST_STOP} follow:{DIST_FOLLOW}", (8, 58),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
-        else:
-            cv2.putText(vis, "Space:stop  +/-:speed  q:quit", (8, 58),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
-        cv2.imshow("Pinky AI", vis)
+        y = 10
+        y = draw_chip(self.state, 10, y, 1.0, STATE_COLORS.get(self.state, BLACK), WHITE)
+
+        speed_txt = f"SPEED {self.motor_base:.0f}  (real {twist.linear.x:.0f})"
+        y = draw_chip(speed_txt, 10, y, 0.65, BLACK, WHITE)
+
+        sf = f"{self.scan_front:.2f}" if self.scan_front is not None else "--"
+        sl = f"{self.scan_left:.2f}"  if self.scan_left  is not None else "--"
+        sr = f"{self.scan_right:.2f}" if self.scan_right is not None else "--"
+        lidar_txt = f"F {sf}   L {sl}   R {sr}"
+        y = draw_chip(lidar_txt, 10, y, 0.65, BLACK, YELLOW)
+
+        cv2.imshow("WASAB MC", vis)
 
         key = cv2.waitKey(1) & 0xFF
+
         if key == ord(' '):
             self._set_e_stop(not self.e_stop)
         elif key in (ord('+'), ord('=')):
@@ -462,7 +470,9 @@ class AiNode(Node):
         self._running = False
         self._face_thread.join(timeout=2.0)
         self.pub.publish(Twist())
+        
         cv2.destroyAllWindows()
+
         super().destroy_node()
 
 
@@ -470,6 +480,7 @@ def main(args=None):
     teacher = select_teacher(FACE_DB_DIR)
     rclpy.init(args=args)
     node = AiNode(teacher)
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -481,3 +492,4 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
+
