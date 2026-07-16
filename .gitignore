@@ -233,7 +233,7 @@ log/
 
 
 # VSCode generated cache
-.vscode
+.vscode/
 .vscode/browse.vc.db
 .vscode/browse.vc.db-*
 .vscode/ipch/
