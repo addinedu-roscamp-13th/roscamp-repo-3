@@ -26,9 +26,9 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from ultralytics import YOLO
 
-from app.components.wasab_op_service.geometry import WaSaBCalibration, WaSaBOperationPlanError, compute_wasab_operation_plan, load_wasab_calibration
-from app.settings import settings
-from app.components.wasab_web_service.commands import COMMAND_ALIASES
+from Service.WasabAIServer.AIService.ai_service.app.components.wasab_op_service.geometry import WaSaBCalibration, WaSaBOperationPlanError, compute_wasab_operation_plan, load_wasab_calibration
+from Service.WasabAIServer.AIService.ai_service.app.settings import settings
+from Service.WasabAIServer.AIService.ai_service.app.components.wasab_web_service.commands import COMMAND_ALIASES
 
 
 # ============================================================
