@@ -58,14 +58,17 @@ python3 run_client.py
 | `f` / `place` | home 이동 후 place pose로 이동하고 그리퍼 열기 |
 | `p` / `pose` | 현재 Flange pose 출력 |
 | `q` / `gripper` | 그리퍼 열기/닫기 토글 |
-| `r` / `random` | home 주변 안전 random pose로 이동 |
 | `s` / `servo-release` | 모든 servo release |
 | `k` / `servo-focus` | 모든 servo focus |
-| `a` / `find-marker` | April marker 탐색 |
-| `t` / `throw` | throw 동작 수행 |
+| `a` / `recycle` | 왼팔이 `trash`는 빨간 박스, `water`는 파란 박스로 분류 |
+| `help` | 왼팔이 AprilTag ID 0 물체를 픽업한 뒤 기존 Place 동작 실행 |
 | `w` / `home` | home 위치로 이동 |
 | `space` / `stop` | 현재 동작 즉시 정지 |
 | `x` / `exit` | 종료 |
+
+`recycle.dynamic_color_target=true`이면 빨강/파랑 박스의 중심 픽셀을
+Hand-Eye 보정으로 Base XY로 변환합니다. 테스트 후 고정 측정 자세로
+돌아가려면 `config/client_config.left.ini`에서 이 값을 `false`로 바꿉니다.
 
 ## 카메라 스트림
 
@@ -129,3 +132,28 @@ python3 auto_marker.py
 - `auto_handeye_charuco_samples_*.npz`
 
 노트북 서버가 사용할 파일은 `Service/WasabAIServer/ai_service/calibration/`에 맞게 복사하거나 서버 설정 경로를 수정합니다.
+# Arm-specific configuration
+
+Robot settings are maintained separately:
+
+- `config/client_config.ini` — common settings plus `[right.*]` overrides
+- `config/arm_identity` — device-local identity containing only `left` or `right`
+- `config/client_config.ini` — active/backward-compatible local configuration
+
+Deploy only the matching profile:
+
+```bash
+./deploy_arm_config.sh left
+./deploy_arm_config.sh right
+```
+
+For local validation without replacing `client_config.ini`, select a profile with
+Both devices use the same command:
+
+```bash
+python3 run_client.py
+```
+
+The Left device stores `left` and the Right device stores `right` in
+`config/arm_identity`. `WASAB_ARM_ID` remains available only as a temporary
+diagnostic override.

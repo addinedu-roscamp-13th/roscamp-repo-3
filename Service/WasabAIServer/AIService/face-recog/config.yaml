@@ -7,11 +7,14 @@ model:
 recognition:
   tolerance: 0.40             # cosine 유사도 임계값 (높을수록 엄격, 권장 0.35~0.50)
   min_face_size: 40           # 최소 얼굴 크기(px) — 작게 보이는 얼굴도 검출
+  unknown_confidence_threshold: 0.30  # 검출점수×Known 임계값 여유의 최소값
 
 camera:
   index: 0
   width: 640
   height: 480
+  fx_px: 600.0
+  assumed_face_width_m: 0.1
 
 face_db:
-  dir: "../pinky_yolo/face_db"   # pinky_yolo(ai_node.py)와 공유 — known/<name>/*.jpg + encodings.pkl
+  dir: "../../FaceDB"         # known/<name>/*.jpg + encodings.pkl (Service/WasabAIServer/FaceDB)

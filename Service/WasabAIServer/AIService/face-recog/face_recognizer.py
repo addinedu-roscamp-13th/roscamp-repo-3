@@ -41,6 +41,7 @@ class FaceResult:
     bbox: tuple[int, int, int, int]   # (x1, y1, x2, y2)
     name: Optional[str]               # 등록자 이름 (미등록이면 None)
     similarity: float                 # best cosine 유사도 (0~1)
+    detection_score: float = 1.0      # 얼굴 검출기 자체 신뢰도 (0~1)
 
     @property
     def is_known(self) -> bool:
@@ -189,7 +190,14 @@ class FaceRecognizer:
             best_idx = int(np.argmax(sims))
             best_sim = float(sims[best_idx])
             name = self.known_names[best_idx] if best_sim >= self.tolerance else None
-            results.append(FaceResult((x1, y1, x2, y2), name, best_sim))
+            results.append(
+                FaceResult(
+                    (x1, y1, x2, y2),
+                    name,
+                    best_sim,
+                    float(getattr(face, "det_score", 1.0)),
+                )
+            )
         return results
 
     @property

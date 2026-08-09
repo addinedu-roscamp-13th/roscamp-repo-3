@@ -40,3 +40,15 @@ class ArmDriver:
         self._mc.send_angles(
             list(angles), self._default_speed if speed is None else speed,
             _async=True)
+
+    def open_gripper(self, speed=50):
+        """그리퍼 열기."""
+        self._mc.set_gripper_state(0, speed)
+
+    def close_gripper(self, value=0, speed=50):
+        """그리퍼 닫기(화재 진압 동작으로 사용)."""
+        self._mc.set_gripper_value(value, speed)
+
+    def stop(self):
+        """현재 실행 중인 로봇팔 움직임을 즉시 중단한다."""
+        return self._mc.stop()

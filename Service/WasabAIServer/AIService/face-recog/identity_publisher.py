@@ -13,7 +13,7 @@ known 중 best similarity 1명의 이름(없으면 "")을
 
 실행 (face-recog .venv, ROS 환경 source 후):
     ~/face-recog/.venv/bin/python identity_publisher.py \
-        --source http://192.168.0.86:8090/stream --show
+        --udp-port 8090 --show
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 from face_recognizer import FaceRecognizer
+from udp_stream import UDPFrameReceiver
 
 
 def _load_config(path: str) -> dict:
@@ -93,7 +94,8 @@ class IdentityPublisher(Node):
 def main() -> None:
     parser = argparse.ArgumentParser(description="등록 선생님 신원 ROS 발행")
     parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--source", help="MJPEG URL 또는 카메라 index")
+    parser.add_argument("--udp-port", type=int, default=8090,
+                        help="cam_server.py 로부터 받을 UDP 포트")
     parser.add_argument("--topic", default="/wasab/k3/identity")
     parser.add_argument("--rate", type=float, default=5.0, help="발행 주기(Hz)")
     parser.add_argument("--no-mirror", action="store_true",
@@ -109,8 +111,6 @@ def main() -> None:
 
     os.chdir(Path(__file__).parent)
     cfg = _load_config(args.config)
-    src = args.source if args.source is not None else cfg["camera"]["index"]
-    source = int(src) if isinstance(src, str) and src.isdigit() else src
 
     recognizer = FaceRecognizer(
         face_db_dir=cfg["face_db"]["dir"],
@@ -124,14 +124,8 @@ def main() -> None:
         print("[identity] ❌ 인식기 미준비 (등록 얼굴 없음? register 먼저)")
         return
 
-    cap = cv2.VideoCapture(source)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)   # 최신 프레임만(딜레이 누적 방지)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, cfg["camera"]["width"])
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cfg["camera"]["height"])
-    if not cap.isOpened():
-        print(f"[identity] ❌ 소스 열기 실패: {source}")
-        return
-    print(f"[identity] 입력: {source} → {args.topic} ({args.rate}Hz)")
+    cap = UDPFrameReceiver(args.udp_port)
+    print(f"[identity] UDP :{args.udp_port} 수신 대기 → {args.topic} ({args.rate}Hz)")
 
     rclpy.init()
     node = IdentityPublisher(

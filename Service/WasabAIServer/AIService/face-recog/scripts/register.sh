@@ -3,7 +3,7 @@
 # 사용법: scripts/register.sh <이름> [옵션]
 #   <이름>               등록자 이름 (예: stephen) — 첫 인자(위치)
 #   -H, --host <ip>      Pi 주소        (기본 192.168.0.86)
-#   -P, --port <port>    포트           (기본 8090)
+#   -P, --port <port>    UDP 포트       (기본 8090)
 #   -r, --res  <WxH>     해상도         (기본 640x480, 표준 모드만)
 #       --scale <f>      등록 화면 표시 배율(기본 1.0, 예: 1.5 또는 2.0)
 #       --local [idx]    Pi cam_server 대신 로컬 카메라(노트북 내장/USB, 기본 index 0) 직접 사용
@@ -47,9 +47,9 @@ if [ "$USE_LOCAL" = 1 ]; then
   exec "$VENV_PY" register.py --name "$NAME" --source "$LOCAL_IDX" --display-scale "$SCALE"
 fi
 
-W="${RES%x*}"; H="${RES#*x}"; STREAM="http://$HOST:$PORT/stream"
+W="${RES%x*}"; H="${RES#*x}"
 ensure_cam "$HOST" "$PORT" "$W" "$H" || exit 1
 
 echo "[register] '$NAME' 등록 — SPACE 캡처 / q 종료"
 cd "$ROOT"
-exec "$VENV_PY" register.py --name "$NAME" --source "$STREAM" --display-scale "$SCALE"
+exec "$VENV_PY" register.py --name "$NAME" --udp-port "$PORT" --display-scale "$SCALE"

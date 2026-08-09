@@ -5,6 +5,7 @@ import sys
 import json
 import time
 import select
+import configparser
 from pathlib import Path
 from datetime import datetime
 
@@ -20,6 +21,11 @@ from pymycobot.mycobot280 import MyCobot280
 PORT = "/dev/ttyJETCOBOT"
 BAUD = 1000000
 CAMERA_ID = 0
+
+# AdminGUI에서 실행할 때는 Qt/OpenCV 로컬 창 없이 동작합니다.
+HEADLESS = os.environ.get("WASAB_CALIBRATION_HEADLESS", "").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 
 # 수동으로 잘 찍힌 샘플 JSON
 SOURCE_JSON = "saved_robot_charuco_points.json"
@@ -98,6 +104,49 @@ SAMPLING_MODE = "gaussian"
 
 ANGLE_MARGIN_DEG = 2.0
 NOISE_SCALE = 0.08
+
+# 각 JetCobot의 client_config.ini Home을 기준으로 주변 50mm만 움직입니다.
+_client_config = configparser.ConfigParser(interpolation=None)
+_client_config.read(
+    Path(__file__).resolve().parent / "config" / "client_config.ini",
+    encoding="utf-8",
+)
+CALIBRATION_HOME_FLANGE = np.array(
+    [
+        float(item.strip())
+        for item in _client_config.get("robot", "home_flange_coords").split(",")
+    ],
+    dtype=np.float64,
+)
+if CALIBRATION_HOME_FLANGE.shape != (6,):
+    raise RuntimeError("robot.home_flange_coords must contain six values")
+CALIBRATION_MAX_TRANSLATION_FROM_HOME_MM = 50.0
+CALIBRATION_X_MM = (
+    CALIBRATION_HOME_FLANGE[0] - 50.0,
+    CALIBRATION_HOME_FLANGE[0] + 50.0,
+)
+CALIBRATION_Y_MM = (
+    CALIBRATION_HOME_FLANGE[1] - 50.0,
+    CALIBRATION_HOME_FLANGE[1] + 50.0,
+)
+CALIBRATION_Z_MM = (
+    CALIBRATION_HOME_FLANGE[2] - 50.0,
+    CALIBRATION_HOME_FLANGE[2] + 50.0,
+)
+MAX_SAMPLE_ATTEMPTS = 100
+
+# HOME에서 XYZ 직선거리 50mm 이내의 제한된 ChArUco 관측 자세들입니다.
+_calibration_offsets = np.array([
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [20.0, 0.0, -15.0, 6.0, 5.0, -9.0],
+    [-20.0, 20.0, 15.0, -6.0, -5.0, 9.0],
+    [0.0, -30.0, 25.0, 10.0, 7.0, 0.0],
+    [30.0, 25.0, -20.0, -8.0, -7.0, -5.0],
+], dtype=np.float64)
+CALIBRATION_FLANGE_POSES = CALIBRATION_HOME_FLANGE + _calibration_offsets
+CALIBRATION_FLANGE_POSES[:, 3:6] = (
+    (CALIBRATION_FLANGE_POSES[:, 3:6] + 180.0) % 360.0
+) - 180.0
 
 
 # =========================================================
@@ -422,6 +471,78 @@ def sample_next_angles(angle_samples):
     return sample_angle_interpolation(angle_samples)
 
 
+def sample_angles_inside_calibration_workspace(mc, angle_samples):
+    """관절각 후보의 FK pose가 사용자가 지정한 XYZ 범위 안일 때만 반환합니다."""
+    last_coords = None
+    for _ in range(MAX_SAMPLE_ATTEMPTS):
+        sampled_angles = [round(float(a), 2) for a in sample_next_angles(angle_samples)]
+        coords = mc.angles_to_coords(sampled_angles)
+        last_coords = coords
+        if not isinstance(coords, list) or len(coords) != 6:
+            continue
+        if (
+            CALIBRATION_X_MM[0] <= float(coords[0]) <= CALIBRATION_X_MM[1]
+            and CALIBRATION_Y_MM[0] <= float(coords[1]) <= CALIBRATION_Y_MM[1]
+            and CALIBRATION_Z_MM[0] <= float(coords[2]) <= CALIBRATION_Z_MM[1]
+        ):
+            return sampled_angles, coords
+    raise RuntimeError(
+        "캘리브레이션 작업범위 안의 관절각 후보를 찾지 못했습니다. "
+        f"마지막 FK pose={last_coords}"
+    )
+
+
+def _unwrap_angle_near(angle_deg, reference_deg):
+    return reference_deg + ((angle_deg - reference_deg + 180.0) % 360.0 - 180.0)
+
+
+def _wrap_angle_deg(angle_deg):
+    return ((angle_deg + 180.0) % 360.0) - 180.0
+
+
+def validate_calibration_flange_pose(pose):
+    """Reject any calibration command more than 50mm from the measured HOME."""
+    values = np.asarray(pose, dtype=np.float64)
+    if values.shape != (6,) or not np.isfinite(values).all():
+        raise RuntimeError(f"유효하지 않은 캘리브레이션 pose: {pose}")
+    xyz = values[:3]
+    distance_mm = float(np.linalg.norm(xyz - CALIBRATION_HOME_FLANGE[:3]))
+    if distance_mm > CALIBRATION_MAX_TRANSLATION_FROM_HOME_MM + 1e-6:
+        raise RuntimeError(
+            "캘리브레이션 pose가 HOME 기준 50mm 이동 제한을 초과했습니다: "
+            f"distance={distance_mm:.2f}mm, pose={values.tolist()}"
+        )
+    if not (
+        CALIBRATION_X_MM[0] <= xyz[0] <= CALIBRATION_X_MM[1]
+        and CALIBRATION_Y_MM[0] <= xyz[1] <= CALIBRATION_Y_MM[1]
+        and CALIBRATION_Z_MM[0] <= xyz[2] <= CALIBRATION_Z_MM[1]
+    ):
+        raise RuntimeError(
+            f"캘리브레이션 pose가 HOME ±50mm XYZ 범위를 벗어났습니다: {values.tolist()}"
+        )
+    return values.round(2).tolist()
+
+
+def sample_calibration_flange_pose(sample_index):
+    """실측 안전 pose 또는 두 안전 pose 사이의 보간 pose를 반환합니다."""
+    count = len(CALIBRATION_FLANGE_POSES)
+    if sample_index < count:
+        return validate_calibration_flange_pose(CALIBRATION_FLANGE_POSES[sample_index])
+
+    first_index, second_index = np.random.choice(count, size=2, replace=False)
+    first = CALIBRATION_FLANGE_POSES[first_index]
+    second = CALIBRATION_FLANGE_POSES[second_index].copy()
+    for axis in range(3, 6):
+        second[axis] = _unwrap_angle_near(second[axis], first[axis])
+
+    # 끝점에 너무 붙지 않게 하면서 작업영역의 다양한 위치/회전을 확보합니다.
+    alpha = float(np.random.uniform(0.15, 0.85))
+    pose = alpha * first + (1.0 - alpha) * second
+    for axis in range(3, 6):
+        pose[axis] = _wrap_angle_deg(pose[axis])
+    return validate_calibration_flange_pose(pose)
+
+
 # =========================================================
 # 6. q 입력 처리 / 대기
 # =========================================================
@@ -450,7 +571,9 @@ def check_quit_key(window_enabled=True):
     return False
 
 
-def wait_with_preview_and_quit_check(seconds, cap, board, aruco_dict, K, dist, window_name):
+def wait_with_preview_and_quit_check(
+    seconds, cap, board, aruco_dict, K, dist, window_name, window_enabled=True
+):
     start = time.time()
 
     last_frame = None
@@ -518,13 +641,14 @@ def wait_with_preview_and_quit_check(seconds, cap, board, aruco_dict, K, dist, w
                 2
             )
 
-            cv2.imshow(window_name, annotated)
+            if window_enabled:
+                cv2.imshow(window_name, annotated)
 
             last_frame = frame.copy()
             last_annotated = annotated.copy()
             last_result = result
 
-        if check_quit_key(window_enabled=True):
+        if check_quit_key(window_enabled=window_enabled):
             return True, last_frame, last_annotated, last_result
 
         time.sleep(0.03)
@@ -1239,7 +1363,6 @@ def save_auto_outputs(samples):
 def main():
     np.random.seed()
 
-    angle_samples = load_previous_success_angles(SOURCE_JSON)
     K, dist = load_intrinsic()
 
     board, aruco_dict = create_charuco_board()
@@ -1260,13 +1383,17 @@ def main():
         print("[경고] focus_all_servos 실패:", e)
 
     window_name = f"Auto ChArUco Capture {RUN_ID}"
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    if not HEADLESS:
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     auto_samples = []
     image_size = None
 
     print("\n=== 자동 샘플링 시작 ===")
-    print("q를 누르면 종료합니다.")
+    if HEADLESS:
+        print(f"[정보] Headless 모드: 로컬 창 없이 최대 {MAX_AUTO_SAMPLES}개를 자동 촬영합니다.")
+    else:
+        print("q를 누르면 종료합니다.")
     print("저장 폴더:", AUTO_IMAGE_DIR)
     print("샘플 JSON:", AUTO_OUTPUT_JSON)
     print("샘플 NPZ :", AUTO_OUTPUT_NPZ)
@@ -1280,19 +1407,18 @@ def main():
                     print("\nMAX_AUTO_SAMPLES 도달")
                     break
 
-            if check_quit_key(window_enabled=True):
+            if check_quit_key(window_enabled=not HEADLESS):
                 print("\nq 입력 감지. 종료합니다.")
                 break
 
             index = len(auto_samples) + 1
 
-            sampled_angles = sample_next_angles(angle_samples)
-            sampled_angles = [round(float(a), 2) for a in sampled_angles]
+            sampled_coords = sample_calibration_flange_pose(len(auto_samples))
 
             print(f"\n=== Auto sample #{index} ===")
-            print("sampled angles command:", sampled_angles)
+            print("sampled flange command:", sampled_coords)
 
-            mc.send_angles(sampled_angles, SPEED)
+            mc.send_coords(sampled_coords, SPEED, 0)
 
             if WAIT_UNTIL_ROBOT_STOPS:
                 stopped = wait_until_robot_stops(mc)
@@ -1310,7 +1436,8 @@ def main():
                 aruco_dict=aruco_dict,
                 K=K,
                 dist=dist,
-                window_name=window_name
+                window_name=window_name,
+                window_enabled=not HEADLESS,
             )
 
             if should_quit:
@@ -1343,8 +1470,9 @@ def main():
                 (0, 255, 0),
                 2
             )
-            cv2.imshow(window_name, annotated)
-            cv2.waitKey(1)
+            if not HEADLESS:
+                cv2.imshow(window_name, annotated)
+                cv2.waitKey(1)
 
             coords_after = mc.get_coords()
             angles_after = mc.get_angles()
@@ -1373,7 +1501,8 @@ def main():
             sample = {
                 "index": index,
                 "time": time.time(),
-                "sampled_angles_command": sampled_angles,
+                "sampled_angles_command": angles_after,
+                "sampled_flange_command": sampled_coords,
                 "speed": SPEED,
                 "wait_after_move_sec": WAIT_AFTER_MOVE_SEC,
                 "coords_after_move": coords_after,
@@ -1418,14 +1547,14 @@ def main():
 
     finally:
         cap.release()
-        cv2.destroyAllWindows()
+        if not HEADLESS:
+            cv2.destroyAllWindows()
 
         print("\n=== 후처리 시작 ===")
         print(f"총 자동 샘플 수: {len(auto_samples)}")
 
         if len(auto_samples) == 0:
-            print("[경고] 저장된 샘플이 없습니다.")
-            return
+            raise RuntimeError("저장된 캘리브레이션 샘플이 없습니다.")
 
         # 1. K, dist가 없거나 강제 재계산 옵션이면 ChArUco 샘플로 intrinsic 계산
         if K is None or dist is None:

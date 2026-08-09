@@ -53,6 +53,7 @@ setup(
             'motion_mimic = wasab_k3_mimic.mimic_node:main',
             'arm_bridge = wasab_k3_mimic.arm_bridge_node:main',
             'arm_search = wasab_k3_mimic.search_node:main',
+            'fire_arm_search = wasab_k3_mimic.fire_search_node:main',
         ],
     },
 )

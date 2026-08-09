@@ -1,0 +1,6 @@
+# fleet(id = IP 끝 옥텟). 모드는 코드 공용(roles.MODES). ROS_DOMAIN_ID와는 별개.
+robots:
+  50: {name: pinky_2ab2, ip: 192.168.2.9, domain: 51, camera: {port: 8090}}
+  87: {name: pinky_b712, ip: 192.168.2.13, domain: 52, camera: {port: 8090}}
+  44: {name: pinky_07d7, ip: 192.168.2.11, domain: 53, camera: {port: 8090}}
+  31: {name: pinky_2777, ip: 192.168.2.15, domain: 54, camera: {port: 8090}}

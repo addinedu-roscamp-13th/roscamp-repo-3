@@ -29,6 +29,7 @@ def _angle_difference_deg(a: float, b: float) -> float:
 class WaSaBArmController:
     def __init__(self) -> None:
         self.mc = MyCobot280(config.PORT, config.BAUD)
+        self.last_wait_timeout_reason: str | None = None
         self.mc.thread_lock = True
         self.mc.focus_all_servos()
 
@@ -42,7 +43,9 @@ class WaSaBArmController:
         self.mc.set_end_type(0)
 
     def get_flange_coords(self) -> list[float]:
-        self.set_flange_mode()
+        # Flange mode is established at initialization and before every
+        # Cartesian command. Re-sending two mode commands on every 50ms pose
+        # poll triples serial traffic and can delay motion feedback.
         coords = self.mc.get_coords()
         if not isinstance(coords, list) or len(coords) != 6:
             raise RuntimeError(f"get_coords failed: {coords}")
@@ -52,29 +55,84 @@ class WaSaBArmController:
             raise RuntimeError(f"get_coords returned non-finite values: {coords}")
         return result
 
-    def set_gripper_value(self, value: int, label: str, *, settle: bool = True) -> None:
+    def set_gripper_value(
+        self,
+        value: int,
+        label: str,
+        *,
+        settle: bool = True,
+        speed: int | None = None,
+        settle_sec: float | None = None,
+    ) -> None:
         method = getattr(self.mc, "set_gripper_value", None)
         if method is None:
             raise RuntimeError("set_gripper_value() is unavailable in this pymycobot version")
 
         value = max(0, min(100, int(round(value))))
+        gripper_speed = config.GRIPPER_SPEED if speed is None else int(speed)
         print(
             f"[GRIPPER] {label}: value={value}, "
-            f"speed={config.GRIPPER_SPEED}, settle={settle}"
+            f"speed={gripper_speed}, settle={settle}"
         )
         try:
-            method(value, config.GRIPPER_SPEED)
+            method(value, gripper_speed)
         except Exception as exc:
             raise RuntimeError(f"gripper {label} command failed: {exc}") from exc
 
         if settle:
-            time.sleep(config.GRIPPER_SETTLE_SEC)
+            time.sleep(config.GRIPPER_SETTLE_SEC if settle_sec is None else float(settle_sec))
 
-    def open_gripper(self) -> None:
-        self.set_gripper_value(config.GRIPPER_OPEN_VALUE, "open", settle=True)
+    def open_gripper(self, *, speed: int | None = None, settle_sec: float | None = None) -> None:
+        self.set_gripper_value(
+            config.GRIPPER_OPEN_VALUE,
+            "open",
+            settle=True,
+            speed=speed,
+            settle_sec=settle_sec,
+        )
 
     def close_gripper(self) -> None:
         self.set_gripper_value(config.GRIPPER_CLOSE_VALUE, "close", settle=True)
+
+    def get_gripper_value(self) -> int | None:
+        method = getattr(self.mc, "get_gripper_value", None)
+        if method is None:
+            return None
+        try:
+            raw = method()
+        except Exception as exc:
+            print("[GRIPPER] get value failed:", exc)
+            return None
+
+        if isinstance(raw, list):
+            if not raw:
+                return None
+            raw = raw[0]
+        try:
+            value = int(round(float(raw)))
+        except (TypeError, ValueError):
+            return None
+        return max(0, min(100, value))
+
+    def is_gripper_open(self) -> bool | None:
+        value = self.get_gripper_value()
+        if value is None:
+            return None
+        midpoint = (config.GRIPPER_OPEN_VALUE + config.GRIPPER_CLOSE_VALUE) / 2.0
+        if config.GRIPPER_OPEN_VALUE >= config.GRIPPER_CLOSE_VALUE:
+            return value >= midpoint
+        return value <= midpoint
+
+    def ensure_gripper_open(self) -> None:
+        is_open = self.is_gripper_open()
+        if is_open is True:
+            print("[GRIPPER] already open")
+            return
+        if is_open is None:
+            print("[GRIPPER] state unknown; opening before pick")
+        else:
+            print("[GRIPPER] closed; opening before pick")
+        self.open_gripper()
 
     def open_gripper_async_now(self) -> None:
         """그리퍼 열기 패킷만 즉시 전송합니다.
@@ -199,6 +257,8 @@ class WaSaBArmController:
         timeout_sec: float | None = None,
         abort_event: Event | None = None,
         progress_callback: Callable[[], None] | None = None,
+        position_tolerance_mm: float | None = None,
+        angle_tolerance_deg: float | None = None,
     ) -> bool:
         target = [float(v) for v in target_coords]
 
@@ -208,34 +268,77 @@ class WaSaBArmController:
             raise ValueError("target pose contains non-finite values")
 
         timeout = config.MOVE_TIMEOUT_SEC if timeout_sec is None else float(timeout_sec)
-        deadline = time.monotonic() + timeout
+        position_tolerance = (
+            config.POSE_POSITION_TOL_MM
+            if position_tolerance_mm is None
+            else float(position_tolerance_mm)
+        )
+        angle_tolerance = (
+            config.POSE_ANGLE_TOL_DEG
+            if angle_tolerance_deg is None
+            else float(angle_tolerance_deg)
+        )
+        if position_tolerance <= 0 or angle_tolerance <= 0:
+            raise ValueError("pose tolerances must be positive")
+        started_at = time.monotonic()
+        deadline = started_at + timeout
+        last_current: list[float] | None = None
+        last_position_error: float | None = None
+        last_angle_error: float | None = None
+        worst_position_axis: str | None = None
+        worst_angle_axis: str | None = None
+        axis_names = ("X", "Y", "Z", "RX", "RY", "RZ")
+        self.last_wait_timeout_reason = None
 
         while time.monotonic() < deadline:
             if abort_event is not None and abort_event.is_set():
+                self.last_wait_timeout_reason = "aborted by stop request"
                 return False
             if progress_callback is not None:
                 progress_callback()
 
             current = self.get_flange_coords()
-            position_error = max(abs(current[i] - target[i]) for i in range(3))
-            angle_error = max(
+            position_errors = [abs(current[i] - target[i]) for i in range(3)]
+            angle_errors = [
                 _angle_difference_deg(current[i], target[i])
                 for i in range(3, 6)
-            )
+            ]
+            position_error = max(position_errors)
+            angle_error = max(angle_errors)
+            last_current = current
+            last_position_error = position_error
+            last_angle_error = angle_error
+            worst_position_axis = axis_names[position_errors.index(position_error)]
+            worst_angle_axis = axis_names[3 + angle_errors.index(angle_error)]
 
             if (
-                position_error <= config.POSE_POSITION_TOL_MM
-                and angle_error <= config.POSE_ANGLE_TOL_DEG
+                position_error <= position_tolerance
+                and angle_error <= angle_tolerance
             ):
+                self.last_wait_timeout_reason = None
                 print(
                     "[ROBOT] target reached: "
-                    f"pos={position_error:.2f} mm, angle={angle_error:.2f} deg"
+                    f"pos={position_error:.2f} mm, angle={angle_error:.2f} deg, "
+                    f"elapsed={time.monotonic() - started_at:.2f}s"
                 )
                 return True
 
             time.sleep(config.MOVE_POLL_SEC)
 
-        print("[ROBOT] target wait timeout")
+        if last_current is None:
+            reason = f"no valid flange pose was read within {timeout:.1f}s"
+        else:
+            reason = (
+                f"pose did not reach tolerance within {timeout:.1f}s; "
+                f"pos_error={last_position_error:.2f}mm"
+                f"({worst_position_axis}, tol={position_tolerance:.2f}mm), "
+                f"angle_error={last_angle_error:.2f}deg"
+                f"({worst_angle_axis}, tol={angle_tolerance:.2f}deg), "
+                f"target={[round(v, 2) for v in target]}, "
+                f"current={[round(v, 2) for v in last_current]}"
+            )
+        self.last_wait_timeout_reason = reason
+        print(f"[ROBOT] target wait timeout : {reason}")
         return False
 
     def send_flange_coords(
@@ -247,8 +350,15 @@ class WaSaBArmController:
         self.set_flange_mode()
         move_speed = config.MOVE_SPEED if speed is None else int(speed)
         move_mode = config.MOVE_MODE if mode is None else int(mode)
-        print("[ROBOT] send_coords(Flange):", target_coords, f"speed={move_speed}")
-        self.mc.send_coords(target_coords, move_speed, move_mode)
+        print("[ROBOT] send_coords(Flange):", target_coords, f"speed={move_speed}", f"mode={move_mode}")
+        try:
+            self.mc.send_coords(target_coords, move_speed, move_mode)
+        except Exception as exc:
+            self.last_wait_timeout_reason = (
+                f"send_coords rejected target={target_coords}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            print("[ROBOT]", self.last_wait_timeout_reason)
 
     def send_flange_coords_and_wait(
         self,
@@ -257,32 +367,111 @@ class WaSaBArmController:
         speed: int | None = None,
         mode: int | None = None,
         abort_event: Event | None = None,
+        position_tolerance_mm: float | None = None,
+        angle_tolerance_deg: float | None = None,
     ) -> bool:
         self.set_flange_mode()
         move_speed = config.MOVE_SPEED if speed is None else int(speed)
         move_mode = config.MOVE_MODE if mode is None else int(mode)
-        print("[ROBOT] send_coords(Flange):", target_coords, f"speed={move_speed}")
-        self.mc.send_coords(target_coords, move_speed, move_mode)
+        print("[ROBOT] send_coords(Flange):", target_coords, f"speed={move_speed}", f"mode={move_mode}")
+        try:
+            self.mc.send_coords(target_coords, move_speed, move_mode)
+        except Exception as exc:
+            self.last_wait_timeout_reason = (
+                f"send_coords rejected target={target_coords}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            print("[ROBOT]", self.last_wait_timeout_reason)
+            return False
         return self.wait_until_flange_pose(
             target_coords,
             abort_event=abort_event,
             progress_callback=progress_callback,
+            position_tolerance_mm=position_tolerance_mm,
+            angle_tolerance_deg=angle_tolerance_deg,
         )
 
     def move_home_and_open_gripper(self) -> bool:
-        self.set_flange_mode()
         self.open_gripper()
-        return self.send_flange_coords_and_wait(config.HOME_FLANGE_COORDS)
+        return self._move_home()
+
+    def _move_home(
+        self,
+        progress_callback: Callable[[], None] | None = None,
+        abort_event: Event | None = None,
+    ) -> bool:
+        if config.HOME_JOINT_ANGLES is not None:
+            self.send_joint_angles(
+                config.HOME_JOINT_ANGLES,
+                speed=config.MOVE_SPEED,
+                async_command=True,
+            )
+            reached = self.wait_until_joint_angles(
+                config.HOME_JOINT_ANGLES,
+                timeout_sec=config.MOVE_TIMEOUT_SEC,
+                tolerance_deg=config.POSE_ANGLE_TOL_DEG,
+                abort_event=abort_event,
+            )
+            if reached and config.HOME_SETTLE_SEC > 0:
+                print(
+                    "[ROBOT] HOME camera settle:",
+                    f"{config.HOME_SETTLE_SEC:.1f}s",
+                )
+                deadline = time.monotonic() + config.HOME_SETTLE_SEC
+                while time.monotonic() < deadline:
+                    if abort_event is not None and abort_event.is_set():
+                        return False
+                    time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+            return reached
+
+        self.set_flange_mode()
+        reached = self.send_flange_coords_and_wait(
+            config.HOME_FLANGE_COORDS,
+            progress_callback=progress_callback,
+            abort_event=abort_event,
+        )
+        if reached and config.HOME_SETTLE_SEC > 0:
+            print(
+                "[ROBOT] HOME camera settle:",
+                f"{config.HOME_SETTLE_SEC:.1f}s",
+            )
+            deadline = time.monotonic() + config.HOME_SETTLE_SEC
+            while time.monotonic() < deadline:
+                if abort_event is not None and abort_event.is_set():
+                    return False
+                time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+        return reached
 
     def move_home_keep_gripper_closed(
         self,
         progress_callback: Callable[[], None] | None = None,
         abort_event: Event | None = None,
     ) -> bool:
-        self.set_flange_mode()
-        return self.send_flange_coords_and_wait(
-            config.HOME_FLANGE_COORDS,
+        return self._move_home(
             progress_callback=progress_callback,
+            abort_event=abort_event,
+        )
+
+    def move_gesture_home(
+        self,
+        abort_event: Event | None = None,
+    ) -> bool:
+        if config.GESTURE_HOME_JOINT_ANGLES is not None:
+            self.send_joint_angles(
+                config.GESTURE_HOME_JOINT_ANGLES,
+                speed=config.GESTURE_HOME_SPEED,
+                async_command=True,
+            )
+            return self.wait_until_joint_angles(
+                config.GESTURE_HOME_JOINT_ANGLES,
+                timeout_sec=config.MOVE_TIMEOUT_SEC,
+                tolerance_deg=config.POSE_ANGLE_TOL_DEG,
+                abort_event=abort_event,
+            )
+
+        return self.send_flange_coords_and_wait(
+            config.GESTURE_HOME_FLANGE_COORDS,
+            speed=config.GESTURE_HOME_SPEED,
             abort_event=abort_event,
         )
 
@@ -306,164 +495,3 @@ class WaSaBArmController:
     def move_place_flange_coords(self) -> bool:
         self.focus_all_servos()
         return self.send_flange_coords_and_wait(config.PLACE_FLANGE_COORDS)
-
-    @staticmethod
-    def _wait_delay_or_abort(delay_sec: float, abort_event: Event | None) -> bool:
-        deadline = time.monotonic() + delay_sec
-
-        while time.monotonic() < deadline:
-            if abort_event is not None and abort_event.is_set():
-                return False
-            time.sleep(min(0.005, max(0.0, deadline - time.monotonic())))
-
-        return True
-
-    def _get_throw_final_coords(self) -> list[float]:
-        raw = getattr(
-            config,
-            "THROW_FINAL_FLANGE_COORDS",
-            getattr(config, "THROW_FINAL_COORDS", None),
-        )
-        if raw is None:
-            raise ValueError(
-                "config.py needs THROW_FINAL_FLANGE_COORDS "
-                "or legacy THROW_FINAL_COORDS"
-            )
-
-        coords = [float(v) for v in raw]
-        if len(coords) != 6 or not all(math.isfinite(v) for v in coords):
-            raise ValueError("throw final coords must contain six finite values")
-        return coords
-
-    def _get_throw_final_speed(self) -> int:
-        return int(
-            getattr(
-                config,
-                "THROW_FINAL_MOVE_SPEED",
-                getattr(config, "THROW_FINAL_COORD_SPEED", config.MOVE_SPEED),
-            )
-        )
-
-    def _get_throw_final_mode(self) -> int:
-        return int(
-            getattr(
-                config,
-                "THROW_FINAL_MOVE_MODE",
-                getattr(config, "THROW_FINAL_COORD_MODE", config.MOVE_MODE),
-            )
-        )
-
-    def execute_throw_mode(
-        self,
-        abort_event: Event | None = None,
-    ) -> tuple[bool, str, bool]:
-        """실제 비동기 던지기 동작.
-
-        1) 시작 자세 도착까지 대기
-        2) 종료 자세 이동을 _async=True으로 전송
-        3) 지정 지연 후 그리퍼 열기 패킷을 _async=True으로 전송
-        4) 종료 자세 도착 확인
-        5) 최종 Flange 좌표 이동을 _async=True으로 전송
-        """
-        released = False
-
-        try:
-            start_angles = self._validate_joint_angles(
-                config.THROW_START_ANGLES,
-                "THROW_START_ANGLES",
-            )
-            end_angles = self._validate_joint_angles(
-                config.THROW_END_ANGLES,
-                "THROW_END_ANGLES",
-            )
-            final_coords = self._get_throw_final_coords()
-            final_speed = self._get_throw_final_speed()
-            final_mode = self._get_throw_final_mode()
-        except (AttributeError, TypeError, ValueError) as exc:
-            return False, f"Throw configuration error: {exc}", released
-
-        if not 1 <= int(config.THROW_PREP_SPEED) <= 100:
-            return False, "THROW_PREP_SPEED must be in 1..100", released
-        if not 1 <= int(config.THROW_SPEED) <= 100:
-            return False, "THROW_SPEED must be in 1..100", released
-        if not 1 <= final_speed <= 100:
-            return False, "THROW_FINAL_MOVE_SPEED must be in 1..100", released
-        if final_mode not in (0, 1):
-            return False, "THROW_FINAL_MOVE_MODE must be 0 or 1", released
-
-        if abort_event is not None and abort_event.is_set():
-            return False, "Throw cancelled before start", released
-
-        # 1) 시작 자세까지 이동: 명령은 비동기, 도착 여부만 여기서 기다립니다.
-        print("[THROW] move to start pose:", start_angles)
-        self.mc.send_angles(
-            start_angles,
-            int(config.THROW_PREP_SPEED),
-            _async=True,
-        )
-
-        if not self.wait_until_joint_angles(
-            start_angles,
-            float(config.THROW_PREP_TIMEOUT_SEC),
-            float(config.THROW_ANGLE_TOLERANCE_DEG),
-            abort_event,
-        ):
-            return False, "Throw start pose timeout/cancelled", released
-
-        if abort_event is not None and abort_event.is_set():
-            return False, "Throw cancelled before release motion", released
-
-        # 2) 팔은 이 줄 이후 계속 end_angles 방향으로 움직입니다.
-        print("[THROW] start release motion:", end_angles)
-        throw_command_time = time.monotonic()
-        self.mc.send_angles(
-            end_angles,
-            int(config.THROW_SPEED),
-            _async=True,
-        )
-
-        # 3) 이 대기는 백그라운드 throw worker 안에서만 일어납니다.
-        # 팔 이동은 이미 시작됐으며, main UI 루프도 계속 동작합니다.
-        if not self._wait_delay_or_abort(
-            float(config.THROW_GRIPPER_OPEN_DELAY_SEC),
-            abort_event,
-        ):
-            return False, "Throw cancelled before gripper release", released
-
-        elapsed = time.monotonic() - throw_command_time
-        print(f"[THROW] async gripper release command at t={elapsed:.3f}s")
-
-        # 종료 위치 도착 여부를 검사하지 않고 무조건 즉시 패킷을 전송합니다.
-        self.open_gripper_async_now()
-        released = True
-
-        # 4) 그리퍼 명령 전송 이후에만 종료 자세 도착을 확인합니다.
-        if not self.wait_until_joint_angles(
-            end_angles,
-            float(config.THROW_END_TIMEOUT_SEC),
-            float(config.THROW_ANGLE_TOLERANCE_DEG),
-            abort_event,
-        ):
-            return False, "Throw end pose timeout/cancelled", released
-
-        if abort_event is not None and abort_event.is_set():
-            return False, "Throw cancelled before final move", released
-
-        # 5) 최종 좌표도 비동기 전송 후, worker에서만 도착 여부를 확인합니다.
-        self.set_flange_mode()
-        print("[THROW] move to final flange pose:", final_coords)
-        self.mc.send_coords(
-            final_coords,
-            final_speed,
-            final_mode,
-            _async=True,
-        )
-
-        if not self.wait_until_flange_pose(
-            final_coords,
-            timeout_sec=float(config.THROW_FINAL_TIMEOUT_SEC),
-            abort_event=abort_event,
-        ):
-            return False, "Throw final pose timeout/cancelled", released
-
-        return True, "Throw sequence completed", released

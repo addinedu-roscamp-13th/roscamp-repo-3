@@ -1,0 +1,65 @@
+# 정밀 주차 파라미터 (Phase 1).
+# 주의: camera intrinsic(fx/fy/cx/cy)이 0이면 detector가 시작 시 fatal(RuntimeError)한다.
+# Task 8 Step 2 calibration 후 아래 camera.* 실측값을 채워야 detector가 뜬다.
+# 중요: calibration은 반드시 아래 width×height 해상도에서 수행해야 한다(intrinsic은 해상도 종속).
+apriltag_detector:
+  ros__parameters:
+    tag_id: 8
+    tag_size_m: 0.06
+    base_frame: base_footprint
+    publish_rate_hz: 15.0
+    width: 640       # ← calibration 해상도와 일치 필수
+    height: 480      # ← calibration 해상도와 일치 필수
+    # 카메라가 base에 상하 뒤집혀 실장 → flip_vertical+flip_horizontal=180° 회전으로 정립.
+    # (flip_vertical 단독=상하 미러는 tag 패턴을 깨뜨림. 반드시 둘 다 true여야 rot180.)
+    flip_vertical: true
+    flip_horizontal: true
+    swap_rb: false
+    # 2026-07-10 줄자 캘리브. 검증 전이다 — §7.10 의 3점 확인 후에야 확정이다.
+    camera_to_base.x: 0.023   # 실측(.50, 바퀴축→렌즈면 23mm). 이전 0.08 은 5.7cm 과다였다
+    camera_to_base.y: 0.0
+    camera_to_base.z: 0.10
+    camera_to_base.yaw: 0.0
+    # 거리 스케일 k=1.0788 (fx 가정 635 로 잰 보고값 / 참값). 태그 60mm 실측으로 tag_size 가설 기각.
+    camera.fx: 588.6  # 635 / 1.0788.  ⚠ 2점 적합 + fy=fx 가정. 체스보드 캘리브 미실시
+    camera.fy: 588.6  # 정사각 픽셀 가정 — 미검증
+    camera.cx: 320.0  # 근사(width/2). 미검증 → 태그 좌우 위치(y)·yaw 정확도는 개선되지 않는다
+    camera.cy: 240.0  # 근사(height/2). 미검증
+    camera.dist_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]   # 왜곡 미측정
+
+precision_parking:
+  ros__parameters:
+    cmd_vel_enabled: false   # 안전 기본값: 첫 실기는 dry-run(zero 발행), 방향 확인 후 true
+    tag_goal_x: 0.15   # 정면 15cm 밀착 목표(2026-07-11)
+    tag_goal_y: 0.0
+    tag_goal_yaw: 0.0
+    # pose regulation(ρ,α,β) 게인. kx/ky는 미사용(하위호환 잔존).
+    kx: 0.35
+    ky: 0.8
+    kyaw: 0.9          # 최종 yaw 정렬(ρ 도달 후)
+    k_rho: 0.5         # 전진(거리)
+    k_alpha: 1.2       # G 방향 조향 (>k_rho, 안정조건)
+    k_beta: -0.4       # 최종 방위 (<0, 안정조건)
+    max_vx: 0.02
+    max_vx_back: 0.01
+    max_wz: 0.20
+    tol_x: 0.015
+    tol_y: 0.010
+    tol_yaw: 0.04
+    tag_lost_timeout_s: 0.5
+    settle_time_s: 0.4
+    control_rate_hz: 20.0
+    overall_timeout_s: 45.0   # max_vx=0.02 저속 + detector 워밍업(~7s) 감안(20s는 settle 직전 timeout)
+    nav_enabled: false
+    goal_id: "dock_a"
+    approach_pose_set: false
+    approach_pose_x: 0.0
+    approach_pose_y: 0.0
+    approach_pose_yaw: 0.0
+    nav_server_wait_s: 5.0
+    nav_result_timeout_s: 60.0
+    nav_cancel_wait_s: 3.0
+    search_timeout_s: 18.0   # SEARCH_TAG 진입 후 detector spawn → 카메라 워밍업 ~7s + 검출 여유
+    max_pose_jump_m: 0.15
+    max_yaw_jump_rad: 0.5
+    settle_min_frames: 5

@@ -1,0 +1,27 @@
+collision_monitor:
+  ros__parameters:
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "cmd_vel_smoothed"   # velocity_smoother 출력(체인 재배열)
+    cmd_vel_out_topic: "cmd_vel"           # 하드웨어 최종 입력
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.2
+    source_timeout: 1.0
+    stop_pub_timeout: 2.0
+    polygons: ["StopZone"]
+    StopZone:
+      type: "polygon"
+      points: "[[0.30, 0.20], [0.30, -0.20], [-0.12, -0.20], [-0.12, 0.20]]"   # Jazzy 문자열 2D배열(실측 튜닝 Task5)
+      action_type: "stop"
+      min_points: 4
+      visualize: true
+      polygon_pub_topic: "collision_stop_zone"
+    observation_sources: ["scan", "yield"]
+    scan:
+      type: "scan"
+      topic: "/scan"
+    yield:                                 # patrol_node가 YIELD 시 정지존 안 점 발행
+      type: "pointcloud"
+      topic: "/patrol/yield_obstacle"
+      min_height: -0.1
+      max_height: 0.5

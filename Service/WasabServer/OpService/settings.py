@@ -52,7 +52,7 @@ class Settings:
     handeye_result_json: Path
     euler_order: str
     object_plane_z_base_mm: float
-    toothbrush_target_z_offset_mm: float
+    default_target_z_offset_mm: float
     target_z_offsets_mm: dict[str, float]
     tcp_offset_flange_to_tcp_mm: tuple[float, float, float]
 
@@ -104,7 +104,15 @@ class Settings:
             handeye_result_json=_resolve_path(_require(parser, "calibration", "handeye_result_json")),
             euler_order=_require(parser, "calibration", "euler_order").lower(),
             object_plane_z_base_mm=parser.getfloat("calibration", "object_plane_z_base_mm"),
-            toothbrush_target_z_offset_mm=parser.getfloat("calibration", "toothbrush_target_z_offset_mm"),
+            default_target_z_offset_mm=parser.getfloat(
+                "calibration",
+                "default_target_z_offset_mm",
+                fallback=parser.getfloat(
+                    "calibration",
+                    "toothbrush_target_z_offset_mm",
+                    fallback=40.0,
+                ),
+            ),
             target_z_offsets_mm=target_z_offsets_mm,
             tcp_offset_flange_to_tcp_mm=_csv_triplet(
                 _require(parser, "calibration", "tcp_offset_flange_to_tcp_mm"),
