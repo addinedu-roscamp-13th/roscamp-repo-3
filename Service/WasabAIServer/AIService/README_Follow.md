@@ -8,8 +8,8 @@ PinkyPro가 등록된 얼굴을 인식해서 따라다니고, JetCobot 제스처
 |---|---|---|
 | `pinky_yolo/` | PC | 얼굴 인식 + 추종 제어 AI (`run_ai.sh`) |
 | `face-recog/` | PC | JetCobot 카메라로 제스처 인식 (`start_laptop.sh`) |
-| `../../Device/WasabBody/WasabArm/wasab_k3_mimic/` + `start_rpi.sh` | JetCobot | 카메라 스트리밍 + 팔 얼굴 추종 |
-| `../../Device/WasabBody/WasabLeg/pinky_node.py` | PinkyPro | 카메라 발행 + 모터/LED 제어 |
+| `../../Device/WasabBot/WasabArmController/wasab_k3_mimic/` + `start_rpi.sh` | JetCobot | 카메라 스트리밍 + 팔 얼굴 추종 |
+| `../../Device/WasabBot/WasabMoveController/pinky_node.py` | PinkyPro | 카메라 발행 + 모터/LED 제어 |
 
 JetCobot·PinkyPro용 코드는 각 로봇 자신의 워크스페이스(보통 `~/wasab/`)에 복사해서 실행한다.
 

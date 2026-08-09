@@ -1,0 +1,12 @@
+{
+  "sample_count": 10,
+  "recommended_hitbox_px": [
+    244,
+    254,
+    473,
+    385
+  ],
+  "image_width": 640,
+  "image_height": 480,
+  "image_path": "/home/jetcobot/wasab/roscamp-repo-3/Device/WasabBot/WasabArmController/gesture_calibration/palm_hitbox_result.right.png"
+}

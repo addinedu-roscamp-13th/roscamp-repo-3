@@ -1,0 +1,8 @@
+odom_cov_relay:
+  ros__parameters:
+    input_topic: "odom"
+    output_topic: "odom_cov"
+    # twist 대각: vx만 EKF가 융합(odom0_config). vyaw 값은 미사용(완전성 위해 보존), 나머지는 큰 값.
+    twist_cov_diag: [4.0e-4, 1.0e6, 1.0e6, 1.0e6, 1.0e6, 2.5e-3]
+    # pose 대각: x, y, z, roll, pitch, yaw  (EKF 미융합 — 형식 유효성용 명목값)
+    pose_cov_diag: [1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3]

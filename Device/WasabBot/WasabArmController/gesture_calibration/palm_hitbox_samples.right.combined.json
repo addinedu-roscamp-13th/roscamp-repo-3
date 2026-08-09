@@ -1,0 +1,17 @@
+[
+  {"u": 330.459, "v": 284.540, "source": "calibration_json"},
+  {"u": 348.457, "v": 312.914, "source": "calibration_json"},
+  {"u": 465.776, "v": 274.378, "source": "calibration_json"},
+  {"u": 359.366, "v": 277.001, "source": "calibration_json"},
+  {"u": 434.070, "v": 340.787, "source": "calibration_json"},
+  {"u": 437.807, "v": 385.272, "source": "calibration_json"},
+  {"u": 405.800, "v": 306.302, "source": "calibration_json"},
+  {"u": 296.024, "v": 328.484, "source": "calibration_json"},
+  {"u": 239.225, "v": 295.165, "source": "calibration_json"},
+  {"u": 305.653, "v": 274.871, "source": "calibration_json"},
+  {"u": 341.000, "v": 276.000, "source": "previous_rightarm_log"},
+  {"u": 313.000, "v": 236.000, "source": "previous_rightarm_log"},
+  {"u": 301.000, "v": 255.000, "source": "previous_rightarm_log"},
+  {"u": 420.000, "v": 289.000, "source": "previous_rightarm_log"},
+  {"u": 323.500, "v": 284.900, "source": "previous_rightarm_log"}
+]

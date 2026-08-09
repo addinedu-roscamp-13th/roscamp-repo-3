@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>ChArUco 11x8 15mm DICT_4X4_50</title>
+  <style>
+    @page { size: A4 portrait; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { width: 210mm; height: 297mm; margin: 0; background: white; }
+    body { position: relative; font-family: Arial, sans-serif; color: black; }
+    .board {
+      position: absolute;
+      left: 22.5mm;
+      top: 55mm;
+      width: 165mm;
+      height: 120mm;
+      image-rendering: pixelated;
+    }
+    .info {
+      position: absolute;
+      left: 22.5mm;
+      top: 184mm;
+      width: 165mm;
+      text-align: center;
+      font-size: 10pt;
+      line-height: 1.5;
+    }
+    .check {
+      display: inline-block;
+      width: 100mm;
+      margin-top: 5mm;
+      border-top: 0.3mm solid black;
+      padding-top: 1.5mm;
+      font-size: 8pt;
+    }
+  </style>
+</head>
+<body>
+  <img class="board" src="charuco_11x8_15mm_4x4_50.png" alt="ChArUco calibration board">
+  <div class="info">
+    ChArUco 11 × 8 · square 15 mm · marker 11 mm · DICT_4X4_50<br>
+    보드 외곽 실측: 165 × 120 mm
+    <div class="check">이 선이 정확히 100 mm인지 자로 확인하세요</div>
+  </div>
+</body>
+</html>

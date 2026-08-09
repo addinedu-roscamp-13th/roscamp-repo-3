@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=WaSaB 통합 실행기
+Comment=AI 서버, 양팔 및 통합 GUI 자동 실행
+Exec=/bin/bash /home/ane/dev_ws/src/roscamp-repo-3/Service/WasabServer/Launcher/launch_wasab.sh
+Icon=/home/ane/dev_ws/src/roscamp-repo-3/UI/mobile/user_gui/frontend/wasab_logo.png
+Terminal=false
+Categories=Development;Robotics;
+StartupNotify=false

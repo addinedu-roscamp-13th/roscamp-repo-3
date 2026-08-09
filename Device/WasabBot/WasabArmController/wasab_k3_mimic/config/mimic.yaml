@@ -1,0 +1,41 @@
+# 얼굴 최우선: 선생님 얼굴은 face-recog/perception_node 가 /face 로 발행.
+# arm_search 는 /face 만으로 SEARCH(sweep) / TRACK(얼굴 servo 추종) 한다.
+# 손목/제스처(주먹·손가락)는 추후 /gesture 확장. arm_bridge 미사용(레거시).
+
+arm_bridge:
+  ros__parameters:
+    coords_topic: /wasab/k3/target_coords
+    port: /dev/ttyJETCOBOT
+    baud: 1000000
+    speed: 30
+
+arm_search:
+  ros__parameters:
+    face_topic: /wasab/k3/face
+    face_timeout: 2.0     # 간헐 미검출 흡수(잠깐 놓쳐도 TRACK 유지)
+    face_conf_threshold: 0.3     # 선생님 얼굴 유사도 하한
+
+    # Unknown 전용 추종 설정
+    unknown_face_topic: /wasab/k3/unknown_face
+    unknown_alarm_topic: /wasab/k3/unknown_alarm
+    unknown_timeout: 2.0
+    unknown_conf_threshold: 0.3
+    unknown_move_limit_m: 0.20
+    unknown_confirm_frames: 8    # 8Hz 입력에서 약 1초 연속 확인 후 외부인 확정
+    unknown_outside_frames: 3
+
+    track_rate_hz: 10.0
+    search_dwell_sec: 1.0     # step-and-stare: 이동완료 후 정지 ≥2 perception 프레임 확보(was 0.4)
+    kx: -4.0          # 0803: TRACK 오버슈트 방지를 위해 -8.0에서 절반으로 낮춤
+    ky: 3.0           # 0803: TRACK 오버슈트 방지를 위해 6.0에서 절반으로 낮춤
+    yaw_limit: 90.0   # J1 절대각 범위
+    pitch_limit: 50.0 # J4 절대각 범위
+    yaw_joint: 0
+    pitch_joint: 3
+    search_yaw_step: 14.0     # 연속 스텝 FOV 겹침(스텝 사이 얼굴 누락 방지, was 22)
+    search_pitch_step: 6.0    # 상하도 약간 겹침(was 8)
+    home: [0.0, 0.0, 0.0, -15.0, 0.0, -45.0] # 통합 원본 카메라 정면 자세
+    track_speed: 25           # TRACK servo 속도(조금씩 부드럽게)
+    search_speed: 30          # 모션 블러↓·슬루 제어성↑(검출 가능 속도, was 55)
+    port: /dev/ttyJETCOBOT
+    baud: 1000000

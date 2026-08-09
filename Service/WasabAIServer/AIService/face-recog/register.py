@@ -4,7 +4,7 @@
 register.py — 웹캠으로 얼굴을 캡처해 face_db/known/<name>/ 에 저장.
 
 InsightFace 로 얼굴이 잡힐 때만 저장하고, 저장 후 encodings.pkl 캐시를
-무효화한다(다음 run.py 실행 시 자동 재임베딩).
+무효화한다(다음 perception_node.py 실행 시 자동 재임베딩).
 
 실행:
     python register.py --name stephen
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import cv2
@@ -25,13 +26,15 @@ except ImportError:
     print("[ERROR] insightface 미설치 → pip install -r requirements.txt")
     sys.exit(1)
 
+from udp_stream import UDPFrameReceiver
+
 
 def _load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-def register(name: str, cam_idx: int, known_dir: Path, app: FaceAnalysis,
+def register(name: str, cap, known_dir: Path, app: FaceAnalysis,
              display_scale: float = 1.0) -> None:
     user_dir = known_dir / name
     user_dir.mkdir(parents=True, exist_ok=True)
@@ -39,18 +42,22 @@ def register(name: str, cam_idx: int, known_dir: Path, app: FaceAnalysis,
     next_idx = len(existing) + 1
     captured = 0
 
-    cap = cv2.VideoCapture(cam_idx)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     if not cap.isOpened():
-        print(f"[ERROR] 카메라 {cam_idx} 열기 실패")
+        print("[ERROR] 카메라 열기 실패")
         return
 
     print(f"[register] '{name}' 등록 시작 | 기존 {len(existing)}장 | SPACE 캡처 / q 종료")
+    fails = 0
     while True:
         ok, frame = cap.read()
         if not ok:
-            break
+            fails += 1
+            if fails >= 100:   # ~5초 연속 실패 시 포기 (UDP 소스는 카메라 재기동 직후 잠깐 프레임이 없을 수 있음)
+                print("[register] ❌ 카메라 프레임을 계속 못 받음 — 연결 확인 후 재시도하세요")
+                break
+            time.sleep(0.05)
+            continue
+        fails = 0
         frame = cv2.flip(frame, 1)
         clean = frame.copy()   # 오버레이 그리기 전 깨끗한 원본 보관(저장용)
         h, w = frame.shape[:2]
@@ -98,8 +105,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="face-recog 얼굴 등록")
     parser.add_argument("--name", help="등록자 이름 (미지정 시 프롬프트)")
     parser.add_argument("--camera", type=int, help="카메라 인덱스 (config 기본값 override)")
-    parser.add_argument("--source", help="카메라 인덱스(정수) 또는 스트림 URL "
-                        "(예: http://192.168.0.86:8090/stream). 지정 시 우선")
+    parser.add_argument("--source", help="로컬 카메라 인덱스(정수). --local 모드에서 사용")
+    parser.add_argument("--udp-port", type=int,
+                        help="JetCobot cam_server.py UDP 수신 포트(지정 시 로컬 카메라보다 우선)")
     parser.add_argument("--config", default="config.yaml", help="설정 파일 경로")
     parser.add_argument("--display-scale", type=float, default=1.0,
                         help="등록 화면 표시 배율(저장 프레임은 원본 유지)")
@@ -112,9 +120,6 @@ def main() -> None:
 
     cfg = _load_config(args.config)
     known_dir = Path(cfg["face_db"]["dir"]) / "known"
-    src = args.source if args.source is not None else (
-        args.camera if args.camera is not None else cfg["camera"]["index"])
-    cam_idx = int(src) if isinstance(src, str) and src.isdigit() else src
 
     name = args.name or input("등록할 이름 입력 (예: stephen): ").strip()
     if not name:
@@ -125,7 +130,17 @@ def main() -> None:
     app = FaceAnalysis(name=cfg["model"]["name"], providers=cfg["model"]["providers"])
     app.prepare(ctx_id=0, det_size=(cfg["model"]["det_size"], cfg["model"]["det_size"]))
 
-    register(name, cam_idx, known_dir, app, args.display_scale)
+    if args.udp_port is not None:
+        cap = UDPFrameReceiver(args.udp_port)
+    else:
+        src = args.source if args.source is not None else (
+            args.camera if args.camera is not None else cfg["camera"]["index"])
+        cam_idx = int(src) if isinstance(src, str) and src.isdigit() else src
+        cap = cv2.VideoCapture(cam_idx)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+    register(name, cap, known_dir, app, args.display_scale)
 
 
 if __name__ == "__main__":

@@ -118,8 +118,8 @@ python3 run_client.py
 | `p` / `pose` | 현재 Flange pose 출력 |
 | `q` / `gripper` | 그리퍼 열기/닫기 토글 |
 | `r` / `random` | home 주변 안전 random pose로 이동 |
-| `a` / `find-marker` | April marker 탐색 |
-| `t` / `throw` | pick 이후 throw 동작 수행 |
+| `a` / `recycle` | 왼팔이 `trash`는 빨간 박스, `water`는 파란 박스로 분류 |
+| `help` | 왼팔이 AprilTag ID 0 물체를 픽업한 뒤 기존 Place 동작 실행 |
 | `w` / `home` | home 위치로 이동 |
 | `space` / `stop` | 현재 동작 즉시 정지 |
 | `x` / `exit` | 클라이언트 종료 |

@@ -1,0 +1,14 @@
+apriltag_relocalizer:
+  ros__parameters:
+    map_name: wasab_map5
+    auto_relocalize_enabled: true
+    auto_rearm_enabled: true
+    v_thresh: 0.01
+    w_thresh: 0.03
+    stationary_frames: 5
+    min_rearm_travel_m: 0.3
+    cooldown_s: 5.0
+    max_tag_age_s: 0.2
+    max_odom_age_s: 0.5
+    cov_xy: 0.0025
+    cov_yaw: 0.0012

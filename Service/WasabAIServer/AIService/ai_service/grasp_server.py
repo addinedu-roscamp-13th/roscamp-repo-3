@@ -5,6 +5,6 @@
 원격 딥러닝 서버를 별도로 사용하지 않습니다. 실제 구현은 ``app.main``에 있고,
 권장 실행 명령은 프로젝트 루트에서 ``python run_server.py``입니다.
 """
-from Service.WasabAIServer.AIService.ai_service.app.main import app
+from app.main import app
 
 __all__ = ["app"]

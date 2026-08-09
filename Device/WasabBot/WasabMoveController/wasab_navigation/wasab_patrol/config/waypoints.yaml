@@ -1,0 +1,18 @@
+# 보안관 순찰 웨이포인트 (wasab_patrol)
+#
+# 좌표계 = map `wasab_map11` (res 0.020, origin [-0.191,-0.207], 105x62), frame=map.
+# 값 출처 = 웹앱 위치맵 순찰 오버레이(app.js PATROL_WPS)에서 검증한 후보.
+#   태그 approach(7/8/9/10) + 남쪽 커버 경유점 S. 순찰은 도킹이 아니라
+#   approach 지점을 '지나가는' 동작이라 도킹보다 도달 요건이 느슨함.
+# 루프 순서: tag8 -> S -> tag9 -> tag10 -> tag7 -> (tag8). loop.
+# 실기 튜닝 대상: 좌표/반경 미세조정은 실 순찰 1바퀴 후.
+
+yield_radius: 0.6
+clear_radius: 0.9
+reach_tol: 0.15
+waypoints:
+  - [-0.002, 0.044, -1.651]   # tag8 approach (2026-07-22 텔레옵 실측, 도킹 슬롯까지: x, y, yaw. quat z=-0.73519 w=0.67786)
+  - [0.809, 0.113, -0.167]   # south coverage (yaw 텔레옵 실측: quat z=-0.08322 w=0.99653)
+  - [1.449, 0.013, 0.200]   # tag9 approach (yaw 텔레옵 실측: quat z=0.09974 w=0.99501)
+  - [1.440, 0.661, 2.949]   # tag10 approach (yaw 로봇87 텔레옵 재조정 2026-07-22: quat z=0.99537 w=0.09612. 이전 -3.104)
+  - [0.009, 0.533, 1.625]   # tag7 approach (yaw 텔레옵 실측: quat z=0.72645 w=0.68722)

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WaSaB 사용자 웹앱 — 화면설계안</title>
+<link rel="stylesheet" href="styles.css?v=20260803-arm-colors1">
+</head>
+<body>
+<div class="app at-login">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="iconbtn" onclick="openMenu()"><span class="ic" data-ic="menu"></span></div>
+    <div class="robotchip" onclick="show('fleet')" style="cursor:pointer" title="로봇 현황">
+      <span class="ic" data-ic="robot"></span><span class="nm" id="tb-robot">Pinky-31</span>
+      <span id="tb-mode" class="modepill idle">대기</span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:4px"><span class="ic" data-ic="battery"></span><b id="tb-batt">82%</b></span>
+    </div>
+    <div class="iconbtn bell" onclick="show('noti')"><span class="ic" data-ic="bell"></span><span class="badge" id="tb-badge" style="display:none"></span></div>
+    <button class="estopbtn" onclick="openEstop()">정지</button>
+  </div>
+
+  <!-- LOGIN -->
+  <section class="screen active" id="login">
+    <div class="loginbox">
+      <img src="wasab_logo.png" alt="WaSaB" class="loginlogo">
+      <h2>로그인</h2>
+      <input id="login-id" type="text" placeholder="아이디" autocomplete="username">
+      <input id="login-pw" type="password" placeholder="비밀번호" autocomplete="current-password">
+      <button class="btn" onclick="doLogin()">로그인</button>
+      <p id="login-err" class="err" style="display:none"></p>
+      <!-- 얼굴 로그인 — 비밀번호와 OR(둘 중 하나만 통과하면 입장) -->
+      <div class="facelogin">
+        <div class="facediv"><span>또는</span></div>
+        <button class="btn ghost center" id="face-btn" onclick="faceLogin()">
+          <span class="ic" data-ic="person"></span>Face 로그인</button>
+        <video id="face-cam" playsinline muted></video>
+        <!-- 스캔 연출: 썬글라스 쓴 와사비 + 스캔라인 -->
+        <div class="facescan" id="face-scan">
+          <div class="scanwrap">
+            <img src="wasab_logo.png" alt="" class="scanmascot">
+            <svg class="shades" viewBox="0 0 100 40" aria-hidden="true">
+              <rect x="4"  y="6" width="38" height="26" rx="11" fill="#12161d"/>
+              <rect x="58" y="6" width="38" height="26" rx="11" fill="#12161d"/>
+              <rect x="42" y="15" width="16" height="6" rx="3" fill="#12161d"/>
+              <rect x="10" y="11" width="13" height="7" rx="3.5" fill="#ffffff" opacity=".35"/>
+              <rect x="64" y="11" width="13" height="7" rx="3.5" fill="#ffffff" opacity=".35"/>
+            </svg>
+            <div class="scanline"></div>
+          </div>
+          <p class="scantext" id="face-scantext">얼굴 스캔 중<span class="dots"><i>.</i><i>.</i><i>.</i></span></p>
+        </div>
+        <p id="face-msg" class="facemsg" style="display:none"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACCOUNTS -->
+  <section class="screen" id="accounts">
+    <h2>계정관리 <span class="sub">(관리자)</span></h2>
+    <div id="acc-list"></div>
+    <h3>계정 생성</h3>
+    <input id="acc-id" type="text" placeholder="아이디(영문/숫자/._-)">
+    <input id="acc-pw" type="password" placeholder="비밀번호(8~128)">
+    <select id="acc-role">
+      <option value="teacher">일반 유저</option>
+      <option value="admin">관리자</option>
+    </select>
+    <button class="btn" onclick="createTeacher()">생성</button>
+    <p id="acc-msg" class="err" style="display:none"></p>
+    <button class="btn ghost" onclick="show('entry')">← 뒤로</button>
+  </section>
+
+  <!-- ROBOT ARM INTEGRATION TEST (관리자용 독립 화면) -->
+  <section class="screen" id="arm-test">
+    <h1>로봇암 현황</h1>
+    <p class="lead">로봇암 연결 상태와 카메라, 기능 및 동작을 확인하고 제어합니다.</p>
+
+    <div class="panel arm-test-panel">
+      <div class="plabel">제어 대상</div>
+      <div class="arm-test-tabs">
+        <button class="btn small active" data-arm-test-mode="left" onclick="setArmTestMode('left')">왼팔</button>
+        <button class="btn ghost small" data-arm-test-mode="right" onclick="setArmTestMode('right')">오른팔</button>
+        <button class="btn ghost small" data-arm-test-mode="dual" onclick="setArmTestMode('dual')">듀얼암</button>
+      </div>
+      <div class="arm-test-status">
+        <span id="arm-test-server" class="pill idle">서버 확인 중</span>
+        <span id="arm-test-feature" class="pill idle nodot">기능 상태 —</span>
+      </div>
+    </div>
+
+    <div class="panel arm-test-panel" id="arm-test-camera-panel">
+      <div class="plabel">실시간 카메라</div>
+      <div class="cam arm-test-camera">
+        <span class="live">LIVE</span>
+        <img id="arm-test-camera" alt="선택한 로봇팔 카메라">
+      </div>
+    </div>
+
+    <div class="panel arm-test-panel" data-arm-test-modes="left right">
+      <div class="plabel">비전 기능</div>
+      <div class="cmdgrid">
+        <button class="btn small center" data-arm-feature-toggle="face-recognition" onclick="armTestFeature('face-recognition')">얼굴인식 · OFF</button>
+        <button class="btn small center" data-arm-feature-toggle="fire-detect" onclick="armTestFeature('fire-detect')">화재감지 · OFF</button>
+        <button class="btn small center" data-arm-feature-toggle="tracking" onclick="armTestFeature('tracking')">추종 · OFF</button>
+      </div>
+    </div>
+
+    <div class="panel arm-test-panel" data-arm-test-modes="left right">
+      <div class="plabel">공통 동작</div>
+      <div class="cmdgrid">
+        <button class="btn primary small center" onclick="armTestCommand('home')">Home</button>
+        <button class="btn small center" onclick="armTestCommand('pick-place')">Pick &amp; Place</button>
+        <button class="btn small center" onclick="armTestCommand('pick')">Pickup</button>
+        <button class="btn small center" onclick="armTestCommand('place')">Place</button>
+        <button class="btn ghost small center" onclick="armTestCommand('pose')">Pose</button>
+        <button class="btn ghost small center" onclick="armTestCommand('gripper')">Gripper</button>
+        <button class="btn danger small center" onclick="armTestCommand('stop')">STOP</button>
+      </div>
+    </div>
+
+    <div class="panel arm-test-panel" data-arm-test-modes="left">
+      <div class="plabel">왼팔 전용</div>
+      <div class="cmdgrid">
+        <button class="btn small center" onclick="armTestCommand('restock')">Restock</button>
+        <button class="btn small center" onclick="armTestCommand('recycle')">Recycle</button>
+        <button class="btn small center" onclick="armTestCommand('help')">Help</button>
+      </div>
+    </div>
+
+    <div class="panel arm-test-panel" data-arm-test-modes="right">
+      <div class="plabel">오른팔 전용</div>
+      <div class="cmdgrid">
+        <button class="btn small center" onclick="armTestCommand('gesture-on')">Gesture ON</button>
+        <button class="btn ghost small center" onclick="armTestCommand('gesture-off')">Gesture OFF</button>
+      </div>
+    </div>
+
+    <div class="panel arm-test-panel" data-arm-test-modes="dual">
+      <div class="plabel">듀얼암 동작</div>
+      <div class="cmdgrid">
+        <button class="btn primary small center" onclick="armTestCommand('home')">양팔 Home</button>
+        <button class="btn small center" onclick="armTestCommand('gift-giving')">선물주기</button>
+        <button class="btn danger small center" onclick="armTestCommand('stop')">양팔 STOP</button>
+      </div>
+    </div>
+
+    <div class="panel arm-test-panel">
+      <div class="plabel">로봇팔 로그</div>
+      <div id="arm-test-logs" class="arm-test-logs">로그를 불러오는 중입니다.</div>
+    </div>
+  </section>
+
+  <!-- ENTRY -->
+  <section class="screen" id="entry">
+    <div class="rolehero">
+      <div class="logo">WaSaB · SCHOOL WORKMATE ROBOT</div>
+      <h1>안녕하세요. <span class="greet-name"></span> 선생님.<br>오늘도 화이팅 해요~ <img src="wasab_logo.png" alt="WaSaB" class="greet-mascot"></h1>
+    </div>
+    <!-- 홈 = 종합 현황 대시보드. 상세 위치맵·CCTV는 로봇 현황 탭. -->
+    <!-- 운영 현황 (구성안 §3) -->
+    <h2>운영 현황</h2>
+    <div id="home-ops" style="margin-bottom:14px"></div>
+    <!-- 실시간 위치맵 (로봇 현황과 렌더 공유 .fmap-*) -->
+    <h2>실시간 위치맵</h2>
+    <div class="panel" style="margin-bottom:14px">
+      <div class="fmap" style="aspect-ratio:105/62;background:#0e1420">
+        <img src="map_display.png" alt="위치맵" style="position:absolute;inset:0;width:100%;height:100%;opacity:.96">
+                <svg class="fmap-zones" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none"></svg>
+        <svg class="fmap-patrol" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;overflow:visible"></svg>
+        <div style="position:absolute;bottom:5px;right:7px;z-index:6;font-size:9px;font-weight:700;color:#ffcf5e">◇ 순찰 경로</div>
+        <div class="fmap-markers"></div>
+        <div class="fmap-nopose" style="position:absolute;bottom:5px;left:7px;z-index:6;font-size:9px;color:#8fa2c0"></div>
+      </div>
+    </div>
+    <!-- 로봇 현황(컴팩트, §5) -->
+    <h2>로봇 현황</h2>
+    <div class="card list" id="home-robots"></div>
+    <h2>로봇팔 기능</h2>
+    <div class="home-arm-actions">
+      <button class="btn home-arm-action gift" data-status-id="home-arm-gift-status" onclick="runMappedArmTask('gift',this)">
+        <span class="ic" data-ic="gift"></span><span>선물주기<span class="sub home-arm-status" id="home-arm-gift-status">대기</span></span>
+      </button>
+      <button class="btn home-arm-action teaching" data-status-id="home-arm-teaching-status" onclick="runMappedArmTask('teaching',this)">
+        <span class="ic" data-ic="pick"></span><span>교보재 올리기<span class="sub home-arm-status" id="home-arm-teaching-status">대기</span></span>
+      </button>
+      <button class="btn home-arm-action recycle" data-status-id="home-arm-recycle-status" onclick="runMappedArmTask('recycle',this)">
+        <span class="ic" data-ic="pick"></span><span>분리수거<span class="sub home-arm-status" id="home-arm-recycle-status">대기</span></span>
+      </button>
+    </div>
+    <!-- 긴급 알림은 운영 현황의 경고·고장 타일이 종합 이벤트로 링크(중복 패널 제거) -->
+
+    <!-- ============================================================
+      WaSaB 사용자 웹앱 화면설계안 — 버전 이력
+      v1  2026-07-14  최초 draft: 역할 기반(교사/안전) · 임무 중심 · 전체 로봇 현황(실시간 위치맵+천장 CCTV) · CPU 절약 카메라 정책 · 안전 이벤트 nav2_approach 도착
+      v2  2026-07-14  교사 보조 태스크 4종화(교보재 올리기·음악 지휘 추가), 순찰 감지 이벤트 4종화(외부인·폭력·보안구역 침입 추가, 이벤트 데이터 기반 파라미터화)
+      v3  2026-07-14  교사 태스크 종료→대기(대기=다음 명령 허브) / 감시 구역 ZoneA~E(맵 5등분)+사전 nav2_approach 좌표, 이벤트는 Zone 참조 / 조치=교내 상황실 긴급 전파 / 천장 CCTV에 Zone 오버레이
+      v4  2026-07-14  비상정지 이원화: 전 로봇 즉시 정지 + 특정 로봇 정지(로봇 선택 리스트)
+    ============================================================ -->
+  </section>
+
+  <!-- ============ TEACHER ============ -->
+  <section class="screen" id="t-home">
+    <h1>선생님 보조</h1>
+    <!-- 로그인 계정(얼굴 인증 시 얼굴 DB 이름)으로 환영 — .greet-name 은 _applyGreeting 이 채움 -->
+    <p class="lead welcome"><b><span class="greet-name"></span> 선생님 환영합니다.</b></p>
+    <!-- 가용 로봇 현황 — 호출 전에 쓸 로봇을 고른다(순찰 화면과 같은 렌더) -->
+    <div class="panel" style="margin-bottom:12px">
+      <div class="plabel">가용 로봇 현황</div>
+      <div class="card list avail-robots" style="margin-bottom:0"></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="pill idle" id="st-mode-thome">대기</span><span style="font-size:12px;color:var(--muted)" id="st-lastloc-thome">위치 --</span></div>
+      <div class="statrow">
+        <div class="stat"><div class="k">배터리</div><div class="v" id="st-batt-thome">82%</div></div>
+        <div class="stat"><div class="k">위치</div><div class="v" id="st-loc-thome">--</div></div>
+        <div class="stat"><div class="k">로봇</div><div class="v" id="st-robot-thome">--</div></div>
+      </div>
+    </div>
+    <!-- 얼굴 인증 게이트 — 계정 로그인으로 들어온 경우에만 표시(얼굴 로그인은 이미 인증됨) -->
+    <div class="fgate" id="f-gate" style="display:none">
+      <span>지시 전 <b>얼굴 인증</b>이 필요합니다.</span>
+      <button class="btn ghost small center" onclick="verifyFace()" id="f-gate-btn">얼굴 인증하기</button>
+      <p class="fgate-msg" id="f-gate-msg"></p>
+    </div>
+
+    <!-- 버튼으로 지시 — 모션 패널과 같은 명령 집합(sendCommand 로 통일) -->
+    <div class="panel" style="margin-bottom:12px">
+      <div class="plabel">버튼 지시</div>
+      <div class="card">
+        <div class="cmdgrid">
+          <button class="btn teacher small center" data-face-command onclick="sendCommand('CLASSROOM','button')">
+            <span class="ic" data-ic="call"></span>교실이동</button>
+          <button class="btn primary small center" data-face-command onclick="sendCommand('HOME','button')">
+            <span class="ic" data-ic="home"></span>홈복귀</button>
+          <button class="btn warn small center" onclick="runMappedArmTask('gift',this)">
+            <span class="ic" data-ic="gift"></span>선물주기</button>
+          <button class="btn warn small center" onclick="runMappedArmTask('teaching',this)">
+            <span class="ic" data-ic="pick"></span>교보재 올리기</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 모션 캡쳐 — 얼굴 인증(누구인지) + 손동작 제스처를 함께 판정한다(AND). -->
+    <div class="panel" style="margin-top:14px">
+      <div class="plabel">모션 지시</div>
+      <div class="card">
+        <video id="mo-cam" playsinline muted></video>
+        <div class="morow">
+          <span class="pill idle" id="mo-who">인증 대기</span>
+          <span class="pill idle nodot" id="mo-gesture">제스처 —</span>
+        </div>
+        <p class="mohint" id="mo-hint"></p>
+        <div class="mokeys">
+          <span>☝️ 1개 = 추종 시작</span><span>✌️ 2개 = 홈복귀</span>
+          <span>✊ 주먹 = 일시정지</span><span>✋ 4개 = 인사</span>
+        </div>
+        <div class="row">
+          <button class="btn teacher small center" id="mo-start" onclick="startMotion()" style="flex:1">
+            <span class="ic" data-ic="motion"></span>모션 지시</button>
+          <button class="btn ghost small center" id="mo-stop" onclick="stopMotion()" style="flex:1" disabled>
+            <span class="ic" data-ic="pause"></span>정지</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="t-following">
+    <h1 id="tfol-title">수업 동행 중</h1>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px"><span class="pill ok" id="tfol-pill">수업 동행 대기</span><span class="pill run nodot" id="tfol-dist" style="margin-left:auto">0.7m 유지</span></div>
+      <div class="statrow" style="margin-top:10px">
+        <div class="stat"><div class="k">거리</div><div class="v" id="st-dist-tfol">0.7m</div></div>
+        <div class="stat"><div class="k">배터리</div><div class="v" id="st-batt-tfol">80%</div></div>
+        <div class="stat"><div class="k">위치</div><div class="v" id="st-loc-tfol">--</div></div>
+      </div>
+    </div>
+    <h2>보조 활동</h2>
+    <div id="tfol-tasks">
+      <button class="btn" onclick="show('t-candy')"><span class="ic" data-ic="gift"></span><span>선물주기<span class="sub">양팔로 학생에게 선물 전달</span></span></button>
+      <button class="btn" onclick="show('t-pickplace')"><span class="ic" data-ic="pick"></span><span>교보재 올리기<span class="sub">한 팔로 지구본을 선생님 탁자에 올림</span></span></button>
+    </div>
+    <h2>세션 마무리</h2>
+    <div class="row">
+      <button class="btn ghost small center" onclick="stopAssist()" style="flex:1"><span class="ic" data-ic="pause"></span>수업 동행 정지</button>
+      <button class="btn primary small center" onclick="goReturning()" style="flex:1"><span class="ic" data-ic="home"></span>홈 복귀</button>
+    </div>
+  </section>
+
+  <section class="screen" id="t-candy">
+    <h1>선물주기</h1>
+    <p class="lead">양팔의 선물주기 기능으로 학생에게 선물을 전달합니다.</p>
+    <div class="card"><ul class="timeline">
+      <li class="active"><div class="dot"></div><div class="tl-body"><div class="tl-t">양팔 선물 전달</div><div class="tl-s">시작 명령을 기다리는 중</div></div></li>
+      <li class="pending"><div class="dot"></div><div class="tl-body"><div class="tl-t">완료 후 대기</div><div class="tl-s">대기</div></div></li>
+    </ul></div>
+    <button class="btn teacher center" onclick="runMappedArmTask('gift',this)"><span class="ic" data-ic="gift"></span>선물주기 시작</button>
+    <button class="btn ghost small center" onclick="stopToIdle()"><span class="ic" data-ic="pause"></span>중지 후 대기로</button>
+  </section>
+
+  <section class="screen" id="t-pickplace">
+    <h1>교보재 올리기</h1>
+    <p class="lead">로봇이 한 팔로 트레이의 지구본을 선생님 탁자 위에 올립니다.</p>
+    <div class="card"><ul class="timeline">
+      <li class="active"><div class="dot"></div><div class="tl-body"><div class="tl-t">왼팔 Help 동작</div><div class="tl-s">시작 명령을 기다리는 중</div></div></li>
+      <li class="pending"><div class="dot"></div><div class="tl-body"><div class="tl-t">탁자 위에 내려놓기 (Place)</div><div class="tl-s">대기</div></div></li>
+    </ul></div>
+    <button class="btn teacher center" onclick="runMappedArmTask('teaching',this)"><span class="ic" data-ic="pick"></span>교보재 올리기 시작</button>
+    <button class="btn ghost small center" onclick="stopToIdle()"><span class="ic" data-ic="pause"></span>중지 후 대기로</button>
+  </section>
+
+  <section class="screen" id="t-returning">
+    <h1 id="returning-title">홈으로 복귀 중</h1>
+    <p class="lead">도크까지 자율주행 후 정밀 정차합니다. 재측위·정밀주차는 자동으로 처리됩니다.</p>
+    <div class="panel" style="margin-bottom:12px">
+      <span class="plabel">전방 카메라 · 도킹 중 ON</span>
+      <div class="dockcam">
+        <img id="dockcam-img" alt="전방 카메라" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;z-index:0">
+        <div class="live2">전방 ON</div>
+        <div class="pose" id="dockpose">x=46.5cm  y=-3.0cm  yaw=-3.1°</div>
+        <div class="guide"></div><div class="cross"></div><div class="tag"></div>
+        <span>AprilTag 정렬 중</span>
+      </div>
+      <p class="camnote">이동(자율주행) 구간에서는 CPU 절약을 위해 전방 카메라를 끄고, <b>도킹 단계에서만</b> 켭니다.</p>
+    </div>
+    <div class="card"><ul class="timeline">
+      <li class="done"><div class="dot"></div><div class="tl-body"><div class="tl-t">수업 동행 종료</div><div class="tl-s">완료</div></div></li>
+      <li class="done"><div class="dot"></div><div class="tl-body"><div class="tl-t">도크까지 자율주행 (Nav2)</div><div class="tl-s">도착</div></div></li>
+      <li class="active" id="tl-reloc"><div class="dot"></div><div class="tl-body"><div class="tl-t">위치 보정 (AprilTag 재측위)</div><div class="tl-s">보정 중…</div></div></li>
+      <li class="pending" id="tl-dock"><div class="dot"></div><div class="tl-body"><div class="tl-t">정밀 정차 (도킹)</div><div class="tl-s">대기</div></div></li>
+    </ul></div>
+    <button class="btn teacher center" onclick="finishReturn()"><span class="ic" data-ic="check"></span>복귀 완료</button>
+  </section>
+
+  <section class="screen" id="t-history">
+    <h1>오늘의 활동</h1>
+    <div class="card list">
+      <div class="li"><span class="ic" data-ic="home"></span><div><div class="li-t">홈 복귀 완료</div><div class="li-s">Pinky-31 · 교무실 도크</div></div><span class="li-x pill idle nodot">14:32</span></div>
+      <div class="li"><span class="ic" data-ic="gift"></span><div><div class="li-t">선물주기 · 3명</div><div class="li-s">복도 A</div></div><span class="li-x pill idle nodot">14:20</span></div>
+      <div class="li"><span class="ic" data-ic="call"></span><div><div class="li-t">호출 · 수업 동행 시작</div><div class="li-s">김선생님</div></div><span class="li-x pill idle nodot">14:05</span></div>
+    </div>
+  </section>
+
+  <!-- ============ SAFETY ============ -->
+  <section class="screen" id="s-home">
+    <h1>교내 순찰</h1>
+    <p class="lead">순찰을 시작하면 로봇이 지정 경로를 순회합니다.</p>
+    <div id="s-eventfeed"></div>
+    <!-- 순찰 화면 위치맵 — 로봇 현황과 같은 렌더(.fmap-* 클래스 공유) -->
+    <div class="panel" style="margin-bottom:12px">
+      <div class="plabel">실시간 위치맵</div>
+      <div class="fmap" style="aspect-ratio:105/62;background:#0e1420">
+        <img src="map_display.png" alt="위치맵" style="position:absolute;inset:0;width:100%;height:100%;opacity:.96">
+                <svg class="fmap-zones" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none"></svg>
+        <svg class="fmap-patrol" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;overflow:visible"></svg>
+        <div style="position:absolute;bottom:5px;right:7px;z-index:6;font-size:9px;font-weight:700;color:#ffcf5e">◇ 순찰 경로</div>
+        <div class="fmap-markers"></div>
+        <div class="fmap-nopose" style="position:absolute;bottom:5px;left:7px;z-index:6;font-size:9px;color:#8fa2c0"></div>
+      </div>
+    </div>
+    <!-- 가용 로봇 현황 — 여기서 순찰에 쓸 로봇을 고른 뒤 아래 '순찰 시작' -->
+    <div class="panel" style="margin-bottom:12px">
+      <div class="plabel">가용 로봇 현황</div>
+      <div class="card list avail-robots" style="margin-bottom:0"></div>
+    </div>
+    <!-- 선택 로봇 상태(수업 보조와 동일 카드, id 만 분리) -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="pill idle" id="st-mode-shome2">대기</span><span style="font-size:12px;color:var(--muted)" id="st-lastloc-shome2">위치 --</span></div>
+      <div class="statrow">
+        <div class="stat"><div class="k">배터리</div><div class="v" id="st-batt-shome2">--</div></div>
+        <div class="stat"><div class="k">위치</div><div class="v" id="st-loc-shome2">--</div></div>
+        <div class="stat"><div class="k">로봇</div><div class="v" id="st-robot-shome2">--</div></div>
+      </div>
+    </div>
+    <button class="btn safety" id="s-patrolbtn" onclick="togglePatrol()"><span class="ic" data-ic="shield"></span><span id="s-patroltext">순찰 시작<span class="sub">지정 경로 자율 순회</span></span></button>
+    <button class="btn teacher" onclick="runMappedArmTask('recycle',this)"><span class="ic" data-ic="pick"></span><span>분리수거<span class="sub">왼팔로 물체를 분류해 수거함에 배치</span></span></button>
+    <div class="card" id="s-patrolcard" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="pill run">순찰 중</span><span style="font-size:12px;color:var(--muted)">등록 경로 순회 중</span></div>
+      <div class="statrow">
+        <div class="stat"><div class="k">현재 구역</div><div class="v" id="st-zone-shome">--</div></div>
+        <div class="stat"><div class="k">배터리</div><div class="v" id="st-batt-shome">74%</div></div>
+        <div class="stat"><div class="k">CCTV 감시</div><div class="v">정상</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="s-recycle">
+    <h1>분리수거</h1>
+    <p class="lead">왼팔의 분리수거 기능으로 물과 쓰레기를 알맞은 수거함에 넣습니다.</p>
+    <div class="card"><ul class="timeline">
+      <li class="active"><div class="dot"></div><div class="tl-body"><div class="tl-t">왼팔 Recycle 동작</div><div class="tl-s">시작 명령을 기다리는 중</div></div></li>
+      <li class="pending"><div class="dot"></div><div class="tl-body"><div class="tl-t">물체 분류 및 수거함 배치</div><div class="tl-s">대기</div></div></li>
+    </ul></div>
+    <button class="btn safety center" onclick="runMappedArmTask('recycle',this)"><span class="ic" data-ic="pick"></span>분리수거 시작</button>
+    <button class="btn ghost small center" onclick="show('s-home')"><span class="ic" data-ic="back"></span>순찰 홈으로</button>
+  </section>
+
+  <section class="screen" id="s-event">
+    <div class="idlenote">지금 감지된 상황이 없어요. 아래는 예시 화면입니다.</div>
+    <h1 id="ev-title">화재 의심 감지</h1>
+    <div class="card">
+      <div id="ev-meta" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="pill alert">미처리</span><span class="pill idle nodot">ZoneE · 교무실 · CCTV-3</span><span class="pill idle nodot">심각도 높음</span></div>
+      <div class="cam" style="margin-top:12px"><div class="live">CCTV · 1차 감지</div><div class="bbox" style="left:44%;top:30%;width:30%;height:50%"><span class="lbl" id="ev-bboxlbl">fire 0.88</span></div><span>천장 CCTV (topview)</span></div>
+      <p class="camnote" id="ev-note">천장 카메라가 1차 감지한 장면입니다. 로봇을 보내 현장에서 다시 확인하세요.</p>
+    </div>
+    <button class="btn safety" onclick="goDispatch()"><span class="ic" data-ic="dispatch"></span><span>로봇 출동 — 현장으로<span class="sub" id="ev-dispatchsub">ZoneE · 교무실 사전 nav2_approach 좌표로 이동 후 2차 확인</span></span></button>
+    <button class="btn ghost small center" onclick="show('s-home')"><span class="ic" data-ic="back"></span>나중에</button>
+  </section>
+
+  <section class="screen" id="s-dispatch">
+    <div class="idlenote">진행 중인 출동이 없어요. 아래는 예시 화면입니다.</div>
+    <h1>현장으로 이동 중</h1>
+    <p class="lead">로봇이 <span id="disp-zone">ZoneE · 교무실</span>의 nav2_approach 지점으로 자율주행하고 있습니다. (도킹 없음)</p>
+    <div style="font-size:12px;color:var(--muted);margin:-4px 2px 12px"><b>목표 nav2_approach</b> · <span id="disp-coord" style="font-variant-numeric:tabular-nums">x=0.00m  y=0.00m  yaw=0°</span></div>
+    <div class="panel" style="margin-bottom:12px">
+      <span class="plabel">로봇 전방 카메라</span>
+      <div class="camoff">
+        <span class="co-ic" data-ic="camoff"></span>
+        <b>이동 중 카메라 꺼짐</b>
+        <span>CPU 절약을 위해 현장 도착 시 자동으로 켜집니다. 이동 경로는 천장 CCTV로 확인하세요.</span>
+      </div>
+    </div>
+    <div class="card"><ul class="timeline">
+      <li class="done"><div class="dot"></div><div class="tl-body"><div class="tl-t">출동 명령 수신</div><div class="tl-s" id="disp-zone2">ZoneE · 교무실</div></div></li>
+      <li class="active"><div class="dot"></div><div class="tl-body"><div class="tl-t">nav2_approach 지점까지 자율주행 (Nav2)</div><div class="tl-s" id="disp-dist">약 12m 남음…</div></div></li>
+      <li class="pending"><div class="dot"></div><div class="tl-body"><div class="tl-t">nav2_approach 도착 · 카메라 2차 검출</div><div class="tl-s">대기</div></div></li>
+    </ul></div>
+    <button class="btn safety center" onclick="goOnsite()"><span class="ic" data-ic="check"></span>도착 (데모: 현장 확인으로)</button>
+  </section>
+
+  <section class="screen" id="s-onsite">
+    <div class="idlenote">확인할 현장이 없어요. 아래는 예시 화면입니다.</div>
+    <h1>현장 실시간 확인</h1>
+    <span class="plabel" style="display:block;font-size:11px;font-weight:800;color:var(--muted);margin:0 2px 6px;text-transform:uppercase">전방 카메라 · nav2_approach 도착 시 ON</span>
+    <div class="cam"><div class="live">LIVE · 로봇 현장</div><div class="bbox" style="left:40%;top:26%;width:34%;height:56%"><span class="lbl" id="onsite-lbl">fire 0.91 · 2차확인</span></div><span>로봇 전방 카메라</span></div>
+    <p class="camnote">모든 선생님에게 실시간 공유 중. 화면을 보고 판단하세요.</p>
+    <h2>조치</h2>
+    <button class="btn safety" onclick="show('s-escalate')"><span class="ic" data-ic="broadcast"></span><span>교내 상황실 긴급 전파<span class="sub">상황실에 현장 상황 즉시 전파 · 외부 신고는 상황실이 판단</span></span></button>
+    <button class="btn ghost small center" onclick="resolveEvent()"><span class="ic" data-ic="check"></span>상황 종료 — 이상 없음</button>
+  </section>
+
+  <section class="screen" id="s-escalate">
+    <div class="idlenote">전파할 상황이 없어요. 아래는 예시 화면입니다.</div>
+    <h1>교내 상황실 긴급 전파</h1>
+    <p class="lead">현장 상황을 교내 상황실에 즉시 전파합니다. 외부 신고(119·112)는 상황실이 판단·수행합니다.</p>
+    <div class="card list">
+      <div class="li"><span class="ic" data-ic="broadcast"></span><div><div class="li-t">교내 상황실 긴급 호출</div><div class="li-s">교내 유선 · 무전</div></div><span class="li-x pill alert nodot">즉시 전파</span></div>
+      <div class="li"><span class="ic" data-ic="camera"></span><div><div class="li-t">현장 정보 전송</div><div class="li-s" id="esc-reason">화재 · ZoneE · 교무실</div></div><span class="li-x pill run nodot">자동 첨부</span></div>
+      <div class="li"><span class="ic" data-ic="bell"></span><div><div class="li-t">교직원 전체 알림</div><div class="li-s">앱 푸시 · 방송</div></div><span class="li-x pill run nodot">전파</span></div>
+    </div>
+    <div class="note">권장 외부 신고 <b><span id="esc-org">119 소방</span></b> — 상황실이 최종 판단·수행합니다.</div>
+    <button class="btn safety center" onclick="resolveEvent()"><span class="ic" data-ic="check"></span>전파 완료 · 상황 종료</button>
+    <button class="btn ghost small center" onclick="show('s-onsite')"><span class="ic" data-ic="back"></span>현장 확인으로</button>
+  </section>
+
+  <section class="screen" id="s-history">
+    <h1>이벤트 이력</h1>
+    <div class="card list">
+      <div class="li"><span class="ic" data-ic="check"></span><div><div class="li-t">화재 의심 · 종료</div><div class="li-s">ZoneE · 교무실 · 오탐 확인</div></div><span class="li-x pill idle nodot">13:10</span></div>
+      <div class="li"><span class="ic" data-ic="person"></span><div><div class="li-t">외부인 감지 · 종료</div><div class="li-s">후문 · 방문객</div></div><span class="li-x pill idle nodot">11:48</span></div>
+      <div class="li"><span class="ic" data-ic="phone"></span><div><div class="li-t">화재 · 119 전파</div><div class="li-s">급식실 · 훈련</div></div><span class="li-x pill alert nodot">09:30</span></div>
+    </div>
+  </section>
+
+  <!-- NOTIFICATIONS -->
+  <section class="screen" id="noti">
+    <h1>알림</h1>
+    <div class="card list" id="noti-list"></div>
+    <div id="noti-pager" style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:10px"></div>
+  </section>
+
+  <section class="screen" id="events">
+    <h1>종합 이벤트</h1>
+    <div class="lead">앱에서 발생한 활동을 최신순으로 기록합니다.</div>
+    <input id="ev-q" type="text" placeholder="검색 (로봇·IP·모드·이벤트·상태·위치·시간)" oninput="renderEvents()" style="width:100%;padding:9px 11px;margin-bottom:8px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:13.5px;box-sizing:border-box">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <span style="font-size:12px;color:var(--muted)">기간</span>
+      <input id="ev-from" type="datetime-local" step="1" oninput="renderEvents()" style="flex:1;min-width:0;padding:8px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:13px">
+      <span style="color:var(--muted)">~</span>
+      <input id="ev-to" type="datetime-local" step="1" oninput="renderEvents()" style="flex:1;min-width:0;padding:8px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:13px">
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn ghost small" id="ev-sort" onclick="evToggleSort()" style="flex:1">최신순 ↓</button>
+      <button class="btn ghost small" onclick="document.getElementById('ev-q').value='';document.getElementById('ev-from').value='';document.getElementById('ev-to').value='';renderEvents()" style="flex:1">초기화</button>
+    </div>
+    <div class="card list" id="ev-list"></div>
+    <div id="ev-pager" style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:10px"></div>
+  </section>
+
+  <!-- ============ GLOBAL: FLEET OVERVIEW ============ -->
+  <section class="screen" id="fleet">
+    <h1>로봇 관리</h1>
+    <p class="lead">교내 전체 맵 위에 모든 로봇의 실시간 위치·상태가 표시됩니다.</p>
+
+    <div class="fsum fleet-sum">
+      <div class="s"><div class="n">3</div><div class="l">전체</div></div>
+      <div class="s"><div class="n">3</div><div class="l">온라인</div></div>
+      <div class="s"><div class="n">2</div><div class="l">임무중</div></div>
+      <div class="s alert"><div class="n">1</div><div class="l">주의</div></div>
+    </div>
+
+    <div class="mongrid">
+      <!-- LEFT: real-time location map (landscape, 교무실 center) -->
+      <div class="panel">
+        <div class="plabel">실시간 위치맵</div>
+        <div class="fmap" id="fmap" style="aspect-ratio:105/62;background:#0e1420">
+          <img src="map_display.png" alt="위치맵" style="position:absolute;inset:0;width:100%;height:100%;opacity:.96">
+          <div class="clock" id="fclock">실시간 --:--:--</div>
+                    <svg class="fmap-zones" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none"></svg>
+        <svg class="fmap-patrol" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;overflow:visible"></svg>
+          <div class="fmap-markers"></div>
+          <div class="fmap-nopose" style="position:absolute;bottom:5px;left:7px;z-index:6;font-size:9px;color:#8fa2c0"></div>
+        </div>
+      </div>
+      <!-- RIGHT: live CCTV (overhead top view) -->
+      <div class="panel">
+        <div class="plabel" id="ccam-label">TOP / 전방 View</div>
+        <div class="ccam" style="aspect-ratio:105/62">
+          <div class="det" style="color:#ff8b6b">● LIVE</div>
+          <img id="cctv-img" style="width:100%;height:100%;object-fit:contain;display:none">
+          <!-- 도킹/재측위로 detector 가 뜨면 전방 카메라로 자동 전환(같은 자리) -->
+          <img id="fleetcam-img" style="width:100%;height:100%;object-fit:contain;display:none">
+          <span id="cctv-note">천장 카메라 실시간 영상 (연결 대기…)</span>
+        </div>
+      </div>
+    </div>
+    <div class="flegend">
+      <span><i style="background:var(--primary)"></i>교사 보조</span>
+      <span><i style="background:var(--safety)"></i>순찰</span>
+      <span><i style="background:#eab308"></i>대기</span>
+      <span><i style="background:var(--danger)"></i>이벤트/정지</span>
+    </div>
+
+    <div class="card list" id="fleet-list">
+      <div class="li rrow" onclick="selectRobot('Pinky-31','수업 동행 중','teacher')"><span class="dotm" style="background:var(--teacher)"></span><div><div class="li-t">Pinky-31 · 수업 동행 중</div><div class="li-s">복도 A · 김선생님 수업 동행</div></div><span class="li-x pill idle nodot">80%</span></div>
+      <div class="li rrow" onclick="selectRobot('Pinky-50','순찰중','safety')"><span class="dotm" style="background:var(--safety)"></span><div><div class="li-t">Pinky-50 · 순찰중</div><div class="li-s">ZoneB · 교실1 · 경로 3/8</div></div><span class="li-x pill idle nodot">74%</span></div>
+      <div class="li rrow" onclick="selectRobot('Pinky-87','대기','idle')"><span class="dotm" style="background:var(--muted)"></span><div><div class="li-t">Pinky-87 · 대기</div><div class="li-s">충전소 · 충전 권장</div></div><span class="li-x pill alert nodot">30%</span></div>
+    </div>
+  </section>
+
+  <nav class="tabbar" id="tabbar" style="display:none"></nav>
+</div>
+
+<!-- DRAWER -->
+<div class="scrim" id="scrim" onclick="closeMenu()"></div>
+<aside class="drawer" id="drawer">
+  <div class="dhead"><div class="brand" onclick="nav('entry')" title="전체 홈"><img class="brand-mark" src="wasab_logo.png" alt="WaSaB"><img class="brand-word" src="wasab_text.png" alt="WaSaB — Workmate School Bot"></div><span class="close" onclick="closeMenu()">✕</span></div>
+  <h3>어서오세요</h3>
+  <a class="navuser"><span class="ic" data-ic="person"></span><b id="nav-account"></b>님</a>
+  <a onclick="openAccounts()" id="menu-accounts" style="display:none"><span class="ic" data-ic="person"></span>계정관리</a>
+  <a onclick="doLogout()"><span class="ic" data-ic="door"></span>로그아웃</a>
+  <h3>수업 보조</h3>
+  <a onclick="navT('t-home')"><span class="ic" data-ic="home"></span>홈 (대기)</a>
+  <a onclick="navT('t-following')"><span class="ic" data-ic="call"></span>수업 동행</a>
+  <a class="sub" onclick="navT('t-candy')"><span class="ic" data-ic="gift"></span>선물주기</a>
+  <a class="sub" onclick="navT('t-pickplace')"><span class="ic" data-ic="pick"></span>교보재 올리기</a>
+  <a onclick="goReturning()"><span class="ic" data-ic="home"></span>홈 복귀</a>
+  <a onclick="navT('t-history')"><span class="ic" data-ic="list"></span>활동 이력</a>
+  <h3>순찰 당직</h3>
+  <a onclick="navS('s-home')"><span class="ic" data-ic="shield"></span>순찰 홈</a>
+  <a onclick="navS('s-recycle')"><span class="ic" data-ic="pick"></span>분리수거</a>
+  <a onclick="navS('s-event')"><span class="ic" data-ic="alert"></span>감지 상황</a>
+  <a class="sub" onclick="navS('s-dispatch')"><span class="ic" data-ic="dispatch"></span>출동 진행</a>
+  <a class="sub" onclick="navS('s-onsite')"><span class="ic" data-ic="camera"></span>현장 확인·조치</a>
+  <a class="sub" onclick="navS('s-escalate')"><span class="ic" data-ic="phone"></span>외부 전파</a>
+  <a onclick="navS('s-history')"><span class="ic" data-ic="list"></span>이벤트 이력</a>
+  <h3>관리</h3>
+  <a onclick="nav('fleet')"><span class="ic" data-ic="robot"></span>로봇 현황</a>
+  <a onclick="nav('arm-test')" id="menu-arm-test" style="display:none"><span class="ic" data-ic="robot"></span>로봇암 현황</a>
+  <a onclick="nav('noti')"><span class="ic" data-ic="bell"></span>알림</a>
+  <a onclick="nav('events')"><span class="ic" data-ic="list"></span>종합 이벤트</a>
+  <a onclick="openEstop()"><span class="ic" data-ic="stop"></span>비상정지</a>
+</aside>
+
+<!-- E-STOP MODAL -->
+<div class="modal-scrim" id="estop-scrim">
+  <div class="modal">
+    <div class="mi"><span class="ic" data-ic="stop"></span></div>
+    <h3>비상정지</h3>
+    <p>정지 후 해제하면 <b>자동 재개하지 않고 대기 상태로 복귀</b>합니다.</p>
+    <button class="btn danger center" onclick="doEstopAll()"><span class="ic" data-ic="stop"></span>전 로봇 즉시 정지</button>
+    <button class="btn ghost small center" onclick="doReleaseAll()" style="margin-top:8px">정지 해제(대기 복귀)</button>
+    <div style="font-size:12px;color:var(--muted);text-align:left;margin:14px 2px 6px">개별 정지 — 이동로봇 또는 로봇팔을 선택해 해당 장치만 즉시 정지합니다.</div>
+    <div class="card list" id="estop-robots" style="margin-bottom:10px"></div>
+    <button class="btn ghost small center" onclick="closeEstop()">취소</button>
+  </div>
+</div>
+
+<script src="icons.js"></script>
+<script src="app.js?v=20260803-arm-colors1"></script>
+<script>
+// 개발용 자동 새로고침 — '?dev=1'로 접속했을 때만 동작(평상시 무영향).
+// app.js/index.html/styles.css 헤더만 2초마다 확인해 바뀌면 페이지를 다시 읽는다.
+if(location.search.indexOf('dev=1')>=0){
+  var _dev={},_devFiles=['app.js','index.html','styles.css'];
+  setInterval(function(){
+    _devFiles.forEach(function(f){
+      fetch(f,{method:'HEAD',cache:'no-store'}).then(function(x){
+        var tag=x.headers.get('etag')||x.headers.get('last-modified')||'';
+        if(!tag)return;
+        if(_dev[f]&&_dev[f]!==tag){location.reload()}
+        _dev[f]=tag;
+      }).catch(function(){});
+    });
+  },2000);
+  console.log('[dev] 자동 새로고침 on — app.js/index.html/styles.css 감시');
+}
+</script>
+</body>
+</html>
